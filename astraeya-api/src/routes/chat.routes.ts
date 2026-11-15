@@ -8,6 +8,7 @@ import {
   saveMessage,
   maybeTitleConversation,
   recordUsage,
+  recordTokens,
   buildMessageHistory,
   buildSystemPrompt,
   getChatContext,
@@ -21,7 +22,7 @@ import {
   recallPromptBlock,
 } from "../services/prompt.service";
 import { extractDocument, formatDocuments } from "../services/documents.service";
-import { getProvider, providerForModel, resolveModelId } from "../ai";
+import { availableModels, getProvider, providerForModel, resolveModelId } from "../ai";
 import type { ChatImage, ChatMessage, StreamChunk } from "../ai";
 import type { AIProvider, FileMaking, GenerationOptions } from "../ai/provider.interface";
 import { wantsFileEdit, wantsFileOutput, wantsMediaNotDocument, wantsVectorArt } from "../ai/file-intent";
@@ -76,8 +77,10 @@ const chatSchema = z.object({
   webSearchEnabled: z.boolean().default(false),
   /** Per-turn override of "remember this conversation". */
   excludeFromMemory: z.boolean().optional(),
-  /** Per-turn override of the account's standing think mode. */
+  /** Per-turn override of the account's standing think mode (the effort). */
   thinkMode: z.enum(["fast", "balanced", "deep"]).optional(),
+  /** The model chosen in the composer: "advanced" (Athena 2.5), "standard" (Metis 3.0), "quick" (Lotus). */
+  model: z.string().max(80).optional(),
 });
 
 type Attachment = z.infer<typeof attachmentSchema>;
@@ -257,6 +260,7 @@ chatRouter.post(
       webSearchEnabled,
       excludeFromMemory,
       thinkMode,
+      model: requestedModel,
     } = parsed.data;
 
     if (!message.trim() && attachments.length === 0) {
@@ -357,7 +361,12 @@ chatRouter.post(
     // decides everything Balanced leaves open.
     const think = resolveThinkMode(settings, thinkMode);
 
-    let chosenModel = think.model ?? routing.model;
+    // The model the person picked in the composer wins; otherwise their
+    // account's model (Metis 3.0 unless they chose another), or task routing
+    // when they have switched that on. The think mode only sets the effort.
+    const pickable = new Set(availableModels().map((m) => m.value));
+    let chosenModel =
+      requestedModel && pickable.has(requestedModel) ? requestedModel : think.model ?? routing.model;
 
     // "Process locally only" is a privacy promise, so it overrides the model
     // choice rather than being one input among several.
@@ -443,7 +452,7 @@ chatRouter.post(
       storedContent,
       documentText
     );
-    await recordUsage(userId, "message");
+    await recordUsage(userId, "message", 1, chosenModel);
 
     if (attachments.length > 0 && settings.images.saveUploads) {
       await saveAttachmentsToLibrary(
@@ -817,6 +826,8 @@ You cannot make images or videos on this model or server. If the user asks for o
           } else if (chunk.type === "job") {
             const job = await handleJobChunk(chunk);
             if (job) send("job", { job });
+          } else if (chunk.type === "usage" && chunk.usage) {
+            await recordTokens(userId, chosenModel, chunk.usage);
           } else if (chunk.type === "sources") {
             send("sources", { sources: chunk.sources });
           } else if (chunk.type === "error") {
@@ -894,6 +905,7 @@ You cannot make images or videos on this model or server. If the user asks for o
       for await (const chunk of streamWithSandboxRetry(provider, history, generation)) {
         if (chunk.type === "file" || chunk.type === "container") await handleFileChunk(chunk);
         else if (chunk.type === "job") await handleJobChunk(chunk);
+        else if (chunk.type === "usage" && chunk.usage) await recordTokens(userId, chosenModel, chunk.usage);
         else if (chunk.type === "text" && chunk.text) fullText += chunk.text;
         else if (chunk.type === "sources" && chunk.sources)
           collectedSources.push(...chunk.sources);

@@ -49,17 +49,19 @@ describe("think modes", () => {
     assert.equal(resolveThinkMode(settings, "deep").model, null);
   });
 
-  it("does not claim native reasoning when no reasoning tier answers", () => {
-    // With nothing assigned, deep cannot be running on a reasoning model.
-    const r = resolveThinkMode(base, "deep");
-    if (!r.nativeReasoning) {
-      assert.match(r.note, /no separate reasoning mode/i);
+  it("never swaps the model: effort applies to whichever model was chosen", () => {
+    // Even with other models assigned to fast and reasoning work.
+    const settings = mergeSettings(base, {
+      ai: { defaultModel: "standard", fastModel: "quick", reasoningModel: "advanced" },
+    });
+    for (const mode of ["fast", "balanced", "deep"] as const) {
+      assert.equal(resolveThinkMode(settings, mode).model, null, mode);
     }
   });
 
-  it("says what fast will actually do, given what is assigned", () => {
-    const r = resolveThinkMode(base, "fast");
-    assert.match(r.note, /no separate fast model is assigned/i);
+  it("describes effort, not a model, in its notes", () => {
+    assert.match(resolveThinkMode(base, "fast").note, /quick/i);
+    assert.match(resolveThinkMode(base, "deep").note, /thinks hardest/i);
   });
 });
 

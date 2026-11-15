@@ -1,3 +1,4 @@
+import { usageByModel } from "../services/model-usage.service";
 import { Router } from "express";
 import { desc, eq } from "drizzle-orm";
 import { db, schema } from "../db";
@@ -34,7 +35,8 @@ usageRouter.get(
       totals[r.type] = (totals[r.type] ?? 0) + r.amount;
     }
 
-    res.json({ totals, plan: "Free" });
+    // Messages, tokens and estimated cost for each model, last 30 days.
+    res.json({ totals, byModel: await usageByModel(req.userId!, 30), plan: "Free" });
   })
 );
 

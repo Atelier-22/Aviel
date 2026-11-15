@@ -17,6 +17,7 @@ import {
   savePlatformConfig,
 } from "../settings/platform";
 import { env } from "../env";
+import { usageByUserAndModel } from "../services/model-usage.service";
 
 export const adminRouter = Router();
 
@@ -535,5 +536,18 @@ adminRouter.get(
       totalMonth: dollars(byKind.reduce((s, k) => s + Number(k.month), 0)),
       totalToday: dollars(byKind.reduce((s, k) => s + Number(k.today), 0)),
     });
+  })
+);
+
+/**
+ * Who uses which model, and how much: messages, tokens and estimated cost per
+ * person and per model (Athena 2.5, Metis 3.0, Lotus), heaviest users first.
+ * ?days=1..365, default 30.
+ */
+adminRouter.get(
+  "/usage/models",
+  asyncHandler(async (req, res) => {
+    const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 365);
+    res.json(await usageByUserAndModel(days));
   })
 );

@@ -67,6 +67,13 @@ export interface ClientTool {
   ): Promise<{ content: string; isError?: boolean }>;
 }
 
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+}
+
 export interface WebSource {
   title: string;
   url: string;
@@ -81,7 +88,9 @@ export interface MadeFile {
 }
 
 export interface StreamChunk {
-  type: "text" | "done" | "error" | "searching" | "sources" | "status" | "file" | "container" | "job";
+  type: "text" | "done" | "error" | "searching" | "sources" | "status" | "file" | "container" | "job" | "usage";
+  /** Present on "usage": what this reply cost in tokens, across every round. */
+  usage?: TokenUsage;
   /** Present on "job": a slow generation (video) that has started. */
   jobId?: string;
   text?: string;

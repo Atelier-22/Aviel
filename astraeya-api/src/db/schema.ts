@@ -575,10 +575,17 @@ export const usageRecords = pgTable("usage_records", {
   userId: text("user_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
-  type: text("type").notNull(), // message | token | image | video | voice | tool_call
+  // message | input_tokens | output_tokens | cache_read_tokens | cache_write_tokens
+  // | image | video | voice | tool_call | file
+  type: text("type").notNull(),
   amount: integer("amount").notNull().default(1),
+  // The model tier that did the work ("advanced" = Athena 2.5, "standard" =
+  // Metis 3.0, "quick" = Lotus), for messages and tokens. Null for the rest.
+  model: text("model"),
   createdAt: createdAt(),
-});
+}, (t) => ({
+  userModelIdx: index("usage_records_user_model_idx").on(t.userId, t.model, t.createdAt),
+}));
 
 export const messageFeedback = pgTable("message_feedback", {
   id: id(),

@@ -77,25 +77,25 @@ export class AnthropicProvider implements AIProvider {
   // model here moves every account on that tier without a data migration.
   readonly models = [
     {
-      id: "standard",
-      modelId: "claude-sonnet-5-5",
-      label: "Standard",
-      description:
-        "Fast and capable, with web search, document reading and image understanding. The default.",
-    },
-    {
       id: "advanced",
       modelId: "claude-opus-5-5",
-      label: "Advanced",
+      label: "Athena 2.5",
       description:
-        "The strongest for hard reasoning, long research and detailed writing. Costs about twice as much per message.",
+        "The strongest. For hard reasoning, long research, careful writing and tricky code. Uses the most power, so it is slower and costs the most per message.",
+    },
+    {
+      id: "standard",
+      modelId: "claude-sonnet-5-5",
+      label: "Metis 3.0",
+      description:
+        "The default. Fast and capable for nearly everything, with web search, documents, images and files.",
     },
     {
       id: "quick",
       modelId: "claude-haiku-5-5",
-      label: "Quick",
+      label: "Lotus",
       description:
-        "The fastest and cheapest, for short questions and quick checks.",
+        "Light and quick, for everyday questions. Uses the least power.",
     },
   ];
 
@@ -267,6 +267,7 @@ export class AnthropicProvider implements AIProvider {
       let wroteText = false;
       let final: Anthropic.Beta.BetaMessage | null = null;
       const madeFileIds = new Set<string>();
+      const used = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
 
       // A long job (building a 15-slide deck) can pause partway; the API then
       // resumes it when the paused turn is sent back. A few rounds at most.
@@ -328,6 +329,10 @@ export class AnthropicProvider implements AIProvider {
         }
 
         final = await stream.finalMessage();
+        used.inputTokens += final.usage.input_tokens ?? 0;
+        used.outputTokens += final.usage.output_tokens ?? 0;
+        used.cacheReadTokens += final.usage.cache_read_input_tokens ?? 0;
+        used.cacheWriteTokens += final.usage.cache_creation_input_tokens ?? 0;
 
         if (env.NODE_ENV === "development") {
           const u = final.usage;
@@ -434,6 +439,7 @@ export class AnthropicProvider implements AIProvider {
         };
       }
 
+      yield { type: "usage", usage: used };
       yield { type: "done" };
     } catch (err) {
       // The user gets a sentence they can act on; the operator gets the whole

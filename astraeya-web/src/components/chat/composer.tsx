@@ -28,6 +28,7 @@ import {
   Paperclip,
   Plus,
   Sparkles,
+  Cpu,
   Square,
   X,
 } from "lucide-react";
@@ -96,7 +97,17 @@ export function Composer({
   onOpenLiveVoice?: () => void;
   autoFocus?: boolean;
 }) {
-  const { settings, meta } = useSettingsStore();
+  const { settings, meta, update } = useSettingsStore();
+  // The models to choose from (Athena 2.5, Metis 3.0, Lotus), in the server's
+  // order. Choosing one saves it to the account, so it carries across chats.
+  const models = (meta?.models ?? []).filter((m) => !m.local);
+  /** One line each in the menu, so all three models and efforts fit on screen. */
+  const MODEL_TAGLINES: Record<string, string> = {
+    advanced: "Strongest, for hard problems. Uses the most power.",
+    standard: "Fast and capable for nearly everything.",
+    quick: "Light and quick, for everyday questions.",
+  };
+  const currentModel = models.find((m) => m.value === settings.ai.defaultModel) ?? models.find((m) => m.value === "standard") ?? models[0];
 
   const [menu, setMenu] = useState<null | "add" | "projects" | "think">(null);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -108,6 +119,19 @@ export function Composer({
   const imageRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const dragDepth = useRef(0);
+
+  // The menu opens towards whichever side of the composer has more room
+  // (upwards in a conversation, downwards on the empty start screen), and
+  // never grows past that room.
+  const [menuPlace, setMenuPlace] = useState<{ down: boolean; maxHeight: number } | null>(null);
+  useEffect(() => {
+    if (menu !== "think" || !rootRef.current) return;
+    const box = rootRef.current.getBoundingClientRect();
+    const above = box.top - 24;
+    const below = window.innerHeight - box.bottom - 24;
+    const down = below > above;
+    setMenuPlace({ down, maxHeight: Math.max(220, down ? below : above) });
+  }, [menu]);
 
   const hasContent = value.trim().length > 0 || attachments.length > 0;
   const canSend = hasContent && !isStreaming;
@@ -353,7 +377,59 @@ export function Composer({
         )}
 
         {menu === "think" && (
-          <div className="hx-menu" style={{ left: 62 }} role="menu">
+          <div
+            className="hx-menu"
+            style={{
+              left: 62,
+              minWidth: 300,
+              maxHeight: menuPlace?.maxHeight,
+              overflowY: "auto",
+              ...(menuPlace?.down ? { top: "calc(100% + 12px)", bottom: "auto" } : {}),
+            }}
+            role="menu"
+            aria-label="Model and effort"
+          >
+            {models.length > 0 && (
+              <>
+                <p className="px-3.5 pb-0.5 pt-1.5 text-[11px] font-medium uppercase tracking-wide text-[var(--text-secondary)]">
+                  Model
+                </p>
+                {models.map((m) => (
+                  <button
+                    key={m.value}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={currentModel?.value === m.value}
+                    onClick={() => {
+                      void update({ ai: { defaultModel: m.value } });
+                      setMenu(null);
+                    }}
+                    className="hx-menu-item items-start"
+                    style={{ paddingBlock: 6 }}
+                  >
+                    <Cpu size={15} className="mt-0.5" />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-2">
+                        {m.label}
+                        {m.value === "standard" && (
+                          <span className="text-[10px] text-[var(--text-secondary)]">Default</span>
+                        )}
+                        {currentModel?.value === m.value && (
+                          <Check size={13} className="text-[var(--bright-blue)]" />
+                        )}
+                      </span>
+                      <span className="mt-0.5 block text-xs leading-snug text-[var(--text-secondary)]">
+                        {MODEL_TAGLINES[m.value] ?? m.description}
+                      </span>
+                    </span>
+                  </button>
+                ))}
+                <div className="my-1 border-t border-[var(--border-subtle)]" />
+              </>
+            )}
+            <p className="px-3.5 pb-0.5 pt-1.5 text-[11px] font-medium uppercase tracking-wide text-[var(--text-secondary)]">
+              Effort{currentModel ? ` for ${currentModel.label}` : ""}
+            </p>
             {(["fast", "balanced", "deep"] as const).map((mode) => {
               const note = thinkModes?.find((m) => m.mode === mode)?.note;
               const label =
@@ -366,6 +442,7 @@ export function Composer({
                   aria-checked={thinkMode === mode}
                   onClick={() => { onThinkModeChange(mode); setMenu(null); }}
                   className="hx-menu-item items-start"
+                    style={{ paddingBlock: 6 }}
                 >
                   <Sparkles size={15} className="mt-0.5" />
                   <span className="min-w-0 flex-1">
@@ -456,7 +533,7 @@ export function Composer({
             <button
               type="button"
               onClick={() => setMenu(menu === "think" ? null : "think")}
-              aria-label={`Thinking mode: ${thinkMode}`}
+              aria-label={`Model ${currentModel?.label ?? ""}, effort ${thinkMode}`}
               aria-expanded={menu === "think"}
               aria-haspopup="menu"
               className="hx-icon-btn"
@@ -470,7 +547,8 @@ export function Composer({
             >
               <Sparkles size={15} />
               <span className="hidden sm:inline">
-                {thinkMode === "fast" ? "Fast" : thinkMode === "deep" ? "Deep" : "Think"}
+                {currentModel?.label ?? "Think"}
+                {thinkMode !== "balanced" && ` · ${thinkMode === "fast" ? "Fast" : "Deep"}`}
               </span>
             </button>
           </div>

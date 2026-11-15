@@ -1,8 +1,9 @@
 // Astraeya — think modes.
 //
-// "Fast", "Balanced" and "Deep think" are a single control over three real
-// levers: which model answers, how much room it is given, and what it is told
-// about how much working to show.
+// "Fast", "Balanced" and "Deep think" are the effort of whichever model the
+// person chose (Athena 2.5, Metis 3.0 or Lotus). They never swap the model:
+// they set how hard it thinks, how much room it gets, and how much working it
+// shows.
 //
 // The honest part is what happens when a model has no reasoning tier. Nothing
 // here pretends: the mode still applies at the prompt level, and
@@ -57,32 +58,26 @@ export function resolveThinkMode(
     candidate && available.has(candidate) ? candidate : null;
 
   if (mode === "fast") {
-    const model = pick(settings.ai.fastModel);
     return {
       mode,
-      model,
+      model: null,
       maxTokens: FAST_TOKENS,
       instruction: FAST_INSTRUCTION,
       nativeReasoning: false,
-      note: model
-        ? "Answering with your fast model, briefly."
-        : "Answering briefly. No separate fast model is assigned, so your usual model is used.",
+      note: "Quick, short answers with little thinking.",
     };
   }
 
   if (mode === "deep") {
-    const model = pick(settings.ai.reasoningModel) ?? pick(settings.ai.defaultModel);
+    const model = pick(settings.ai.defaultModel);
     const native = model ? providerForModel(model).capabilities.reasoning : false;
-
     return {
       mode,
-      model: pick(settings.ai.reasoningModel),
+      model: null,
       maxTokens: DEEP_TOKENS,
       instruction: DEEP_INSTRUCTION,
       nativeReasoning: native,
-      note: native
-        ? "Using a model that reasons before answering."
-        : "This model has no separate reasoning mode, so Astraeya asks it to work through the problem and gives it more room to answer.",
+      note: "Thinks hardest before answering. Slower, and uses more of the model's power.",
     };
   }
 
@@ -92,7 +87,7 @@ export function resolveThinkMode(
     maxTokens: null,
     instruction: "",
     nativeReasoning: false,
-    note: "Your usual model, answering normally.",
+    note: "The usual balance of speed and care.",
   };
 }
 

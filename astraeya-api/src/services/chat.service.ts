@@ -65,8 +65,24 @@ export async function maybeTitleConversation(
     .where(eq(schema.conversations.id, conversationId));
 }
 
-export async function recordUsage(userId: string, type: string, amount = 1) {
-  await db.insert(schema.usageRecords).values({ userId, type, amount });
+export async function recordUsage(userId: string, type: string, amount = 1, model: string | null = null) {
+  await db.insert(schema.usageRecords).values({ userId, type, amount, model });
+}
+
+/** The tokens one reply used, recorded against the model that answered. */
+export async function recordTokens(
+  userId: string,
+  model: string,
+  usage: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number }
+) {
+  const rows = [
+    { type: "input_tokens", amount: usage.inputTokens },
+    { type: "output_tokens", amount: usage.outputTokens },
+    { type: "cache_read_tokens", amount: usage.cacheReadTokens },
+    { type: "cache_write_tokens", amount: usage.cacheWriteTokens },
+  ].filter((r) => r.amount > 0);
+  if (rows.length === 0) return;
+  await db.insert(schema.usageRecords).values(rows.map((r) => ({ userId, model, ...r })));
 }
 
 export async function buildMessageHistory(

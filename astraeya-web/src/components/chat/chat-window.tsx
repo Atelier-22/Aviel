@@ -428,6 +428,8 @@ export function ChatWindow({
       // Per-message, so choosing Deep for one hard question does not change
       // the account's standing preference.
       thinkMode,
+      // The model chosen in the Think menu (Metis 3.0 unless changed).
+      model: settingsRef.current.ai.defaultModel,
     };
 
     if (settingsRef.current.advanced.debugMode) {
