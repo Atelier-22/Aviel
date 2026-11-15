@@ -1,0 +1,11 @@
+# The versions working on the development PC (from voices/server/requirements.txt),
+# plus the web server.
+kokoro-onnx==0.4.7
+onnxruntime==1.32.0
+numpy==2.5.4
+soundfile==0.14.0
+espeakng-loader==0.2.4
+phonemizer-fork==3.3.1
+piper-tts==1.8.0
+fastapi==0.124.0
+uvicorn==0.38.0

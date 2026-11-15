@@ -36,6 +36,13 @@ const envSchema = z.object({
   // polling, which works the same, just up to a few seconds later.
   PUBLIC_API_URL: z.string().optional(),
 
+  // The voice server (astraeya-voice), which makes speech from text. On Render
+  // this is the private service's internal address. Without it, the app falls
+  // back to the browser's own voices and says so.
+  VOICE_SERVICE_URL: z.string().default("http://127.0.0.1:5005"),
+  // Shared secret the voice server checks, so only this API can use it.
+  VOICE_SECRET: z.string().optional(),
+
   // Comma-separated list of browser origins allowed to call this API.
   // Native mobile clients send no Origin header and are always allowed.
   CORS_ORIGINS: z.string().default("http://localhost:3000"),

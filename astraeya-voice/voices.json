@@ -1,0 +1,61 @@
+{
+  "default": "af_heart",
+  "note": "Every English voice Astraeya can offer. 'id' is what you pass to the engine. 'grade' is the Kokoro authors' quality grade from VOICES.md (A best, F worst). Piper voices have no official grade. 'credit' voices need the CC BY 4.0 credit line in LICENSES.md wherever their audio is published.",
+  "engines": {
+    "kokoro": {
+      "model": "kokoro/kokoro-v1.0.onnx",
+      "voices": "kokoro/voices-v1.0.bin",
+      "sampleRate": 24000,
+      "licence": "Apache-2.0"
+    },
+    "piper": {
+      "modelDir": "piper/<gender>/",
+      "files": "<id>.onnx + <id>.onnx.json (keep the pair together, same base name)",
+      "sampleRate": 22050,
+      "licence": "per voice, see LICENSES.md"
+    }
+  },
+  "voices": [
+    { "id": "af_heart",    "name": "Heart",    "gender": "female", "accent": "American", "engine": "kokoro", "grade": "A",  "default": true },
+    { "id": "af_bella",    "name": "Bella",    "gender": "female", "accent": "American", "engine": "kokoro", "grade": "A-" },
+    { "id": "af_nicole",   "name": "Nicole",   "gender": "female", "accent": "American", "engine": "kokoro", "grade": "B-", "style": "soft, whispery" },
+    { "id": "af_aoede",    "name": "Aoede",    "gender": "female", "accent": "American", "engine": "kokoro", "grade": "C+" },
+    { "id": "af_kore",     "name": "Kore",     "gender": "female", "accent": "American", "engine": "kokoro", "grade": "C+" },
+    { "id": "af_sarah",    "name": "Sarah",    "gender": "female", "accent": "American", "engine": "kokoro", "grade": "C+" },
+    { "id": "af_nova",     "name": "Nova",     "gender": "female", "accent": "American", "engine": "kokoro", "grade": "C" },
+    { "id": "af_alloy",    "name": "Alloy",    "gender": "female", "accent": "American", "engine": "kokoro", "grade": "C" },
+    { "id": "af_sky",      "name": "Sky",      "gender": "female", "accent": "American", "engine": "kokoro", "grade": "C-" },
+    { "id": "af_jessica",  "name": "Jessica",  "gender": "female", "accent": "American", "engine": "kokoro", "grade": "D" },
+    { "id": "af_river",    "name": "River",    "gender": "female", "accent": "American", "engine": "kokoro", "grade": "D" },
+    { "id": "bf_emma",     "name": "Emma",     "gender": "female", "accent": "British",  "engine": "kokoro", "grade": "B-" },
+    { "id": "bf_isabella", "name": "Isabella", "gender": "female", "accent": "British",  "engine": "kokoro", "grade": "C" },
+    { "id": "bf_alice",    "name": "Alice",    "gender": "female", "accent": "British",  "engine": "kokoro", "grade": "D" },
+    { "id": "bf_lily",     "name": "Lily",     "gender": "female", "accent": "British",  "engine": "kokoro", "grade": "D" },
+
+    { "id": "am_michael",  "name": "Michael",  "gender": "male",   "accent": "American", "engine": "kokoro", "grade": "C+" },
+    { "id": "am_fenrir",   "name": "Fenrir",   "gender": "male",   "accent": "American", "engine": "kokoro", "grade": "C+" },
+    { "id": "am_puck",     "name": "Puck",     "gender": "male",   "accent": "American", "engine": "kokoro", "grade": "C+" },
+    { "id": "am_liam",     "name": "Liam",     "gender": "male",   "accent": "American", "engine": "kokoro", "grade": "D" },
+    { "id": "am_echo",     "name": "Echo",     "gender": "male",   "accent": "American", "engine": "kokoro", "grade": "D" },
+    { "id": "am_eric",     "name": "Eric",     "gender": "male",   "accent": "American", "engine": "kokoro", "grade": "D" },
+    { "id": "am_onyx",     "name": "Onyx",     "gender": "male",   "accent": "American", "engine": "kokoro", "grade": "D" },
+    { "id": "am_adam",     "name": "Adam",     "gender": "male",   "accent": "American", "engine": "kokoro", "grade": "F+" },
+    { "id": "bm_george",   "name": "George",   "gender": "male",   "accent": "British",  "engine": "kokoro", "grade": "C" },
+    { "id": "bm_fable",    "name": "Fable",    "gender": "male",   "accent": "British",  "engine": "kokoro", "grade": "C" },
+    { "id": "bm_lewis",    "name": "Lewis",    "gender": "male",   "accent": "British",  "engine": "kokoro", "grade": "D+" },
+    { "id": "bm_daniel",   "name": "Daniel",   "gender": "male",   "accent": "British",  "engine": "kokoro", "grade": "D" },
+
+    { "id": "en_GB-cori-high",       "name": "Cori",     "gender": "female", "accent": "British",  "engine": "piper", "path": "piper/female/en_GB-cori-high.onnx" },
+    { "id": "en_GB-cori-medium",     "name": "Cori (Light)", "gender": "female", "accent": "British", "engine": "piper", "path": "piper/female/en_GB-cori-medium.onnx", "credit": true },
+    { "id": "en_US-kristin-medium",  "name": "Kristin",  "gender": "female", "accent": "American", "engine": "piper", "path": "piper/female/en_US-kristin-medium.onnx" },
+    { "id": "en_US-kathleen-medium", "name": "Kathleen", "gender": "female", "accent": "American", "engine": "piper", "path": "piper/female/en_US-kathleen-medium.onnx", "credit": true },
+    { "id": "en_US-ljspeech-high",   "name": "Linda",    "gender": "female", "accent": "American", "engine": "piper", "path": "piper/female/en_US-ljspeech-high.onnx" },
+    { "id": "en_US-john-medium",     "name": "John",     "gender": "male",   "accent": "American", "engine": "piper", "path": "piper/male/en_US-john-medium.onnx" },
+    { "id": "en_US-joe-medium",      "name": "Joe",      "gender": "male",   "accent": "American", "engine": "piper", "path": "piper/male/en_US-joe-medium.onnx" },
+    { "id": "en_US-norman-medium",   "name": "Norman",   "gender": "male",   "accent": "American", "engine": "piper", "path": "piper/male/en_US-norman-medium.onnx" }
+  ],
+  "excluded": {
+    "am_santa": "novelty Santa voice (grade D-); sample kept in samples/male only",
+    "non-English Kokoro voices": "inside voices-v1.0.bin but not offered; ff_siwis and the jf_/jm_ voices would need CC BY credit"
+  }
+}

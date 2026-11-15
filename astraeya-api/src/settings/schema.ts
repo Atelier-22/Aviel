@@ -8,6 +8,7 @@
 // Every value is validated server-side. Nothing here trusts the client.
 
 import { z } from "zod";
+import { normalizeVoiceId } from "../voice/catalogue";
 
 /* -------------------------------------------------------------------------- */
 /* Groups                                                                     */
@@ -156,8 +157,11 @@ export const conversationSchema = z.object({
 });
 
 export const voiceSchema = z.object({
-  /** Browser speech-synthesis voice name. Null follows the device default. */
-  outputVoice: z.string().max(120).nullable().default(null),
+  /**
+   * One of Astraeya's own voices (see voice/catalogue.ts). Anything else,
+   * including an old browser voice name or null, is read as af_heart.
+   */
+  outputVoice: z.preprocess(normalizeVoiceId, z.string().max(120)),
   rate: z.number().min(0.5).max(2).default(1),
   pitch: z.number().min(0).max(2).default(1),
   volume: z.number().min(0).max(1).default(1),

@@ -16,7 +16,14 @@ import {
   StatusPill,
 } from "../primitives";
 import { useSection } from "../use-section";
-import { speak, stopSpeaking, useSpeechVoices } from "@/lib/speech";
+import { useSpeechSupport } from "@/lib/speech";
+import {
+  groupVoices,
+  loadVoices,
+  playPreview,
+  stopReading,
+  type AstraeyaVoice,
+} from "@/lib/voice/tts";
 
 const DICTATION_LANGS = [
   { value: "en-US", label: "English (US)" },
@@ -33,9 +40,23 @@ const DICTATION_LANGS = [
 ];
 
 export function VoiceSection() {
-  const { values, set, reset, resetting, saveState, error, meta, settings } =
+  const { values, set, reset, resetting, saveState, error, meta } =
     useSection("voice");
-  const { voices, ttsSupported, sttSupported } = useSpeechVoices();
+  // Only for knowing whether this browser can recognise speech; voices for
+  // speaking come from Astraeya's own voice server.
+  const { sttSupported } = useSpeechSupport();
+  const [voices, setVoices] = useState<AstraeyaVoice[]>([]);
+  const [serviceUp, setServiceUp] = useState<boolean | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadVoices()
+      .then((list) => {
+        setVoices(list.voices);
+        setServiceUp(list.available);
+      })
+      .catch(() => setServiceUp(false));
+  }, []);
 
   const [previewing, setPreviewing] = useState(false);
   const [micState, setMicState] = useState<
@@ -43,24 +64,18 @@ export function VoiceSection() {
   >("unknown");
   const [micDetail, setMicDetail] = useState<string | null>(null);
 
-  useEffect(() => () => stopSpeaking(), []);
+  useEffect(() => () => stopReading(), []);
 
   const voiceDisabled = meta?.features?.voice === false;
 
+  // The clip is made once per voice and kept, so playing it again is instant.
   function preview() {
-    if (previewing) {
-      stopSpeaking();
-      setPreviewing(false);
-      return;
-    }
+    if (previewing) return;
     setPreviewing(true);
-    speak(
-      "This is how Astraeya will sound when it reads a reply aloud.",
-      values,
-      voices,
-      () => setPreviewing(false),
-      settings.language.voiceOutput
-    );
+    setPreviewError(null);
+    playPreview(values.outputVoice, values.volume)
+      .catch(() => setPreviewError("The voice service isn't available right now, so there's no preview."))
+      .finally(() => setPreviewing(false));
   }
 
   /**
@@ -130,9 +145,13 @@ export function VoiceSection() {
       </div>
 
       <Callout title="Where voice runs">
-        Speech recognition and speech synthesis both run in your browser, using
-        the voices installed on this device. No audio is ever sent to an Astraeya
-        server, and none is stored anywhere.
+        When you speak to Astraeya, your browser turns your words into text; no
+        recording of your voice is uploaded. When Astraeya reads a reply aloud,
+        the text of that reply is sent to Astraeya&apos;s own server, which makes
+        the speech and sends it back. Nothing is sent to any other company, and
+        the audio is not stored. If that server is ever unavailable, your
+        browser&apos;s built-in voice reads instead, and you&apos;ll see a note
+        saying so.
       </Callout>
 
       {voiceDisabled && (
@@ -143,47 +162,44 @@ export function VoiceSection() {
 
       <SettingsCard
         title="Reading replies aloud"
-        description={
-          ttsSupported
-            ? "Voices come from your device, so this list differs between computers. A saved voice that isn't installed falls back to the default."
-            : undefined
-        }
+        description="Astraeya's own voices, the same on every device. Heart is the default."
       >
-        {!ttsSupported && (
+        {serviceUp === false && (
           <SettingsRow
-            label="Read aloud"
-            unavailable="This browser has no speech synthesis, so replies cannot be read aloud here."
+            label="Voice service"
+            unavailable="Astraeya's voice server isn't answering right now. Replies are read with your browser's voice until it is back."
           >
-            <StatusPill tone="off">Unavailable</StatusPill>
+            <StatusPill tone="off">Using backup</StatusPill>
           </SettingsRow>
         )}
 
-        <SettingsRow label="Voice" icon={Volume2} hidden={!ttsSupported}>
+        <SettingsRow label="Voice" icon={Volume2}>
           <div className="flex items-center gap-2">
             <SettingsDropdown
               label="Voice"
-              value={values.outputVoice ?? ""}
+              value={values.outputVoice}
               disabled={voices.length === 0 || voiceDisabled}
-              onChange={(v) => set({ outputVoice: v || null })}
-              options={[
-                { value: "", label: "Device default" },
-                ...voices.map((v) => ({
-                  value: v.name,
-                  label: `${v.name} (${v.lang})`,
-                })),
-              ]}
+              onChange={(v) => set({ outputVoice: v })}
+              groups={groupVoices(voices).map((g) => ({
+                label: g.label,
+                options: g.voices.map((v) => ({ value: v.id, label: v.label })),
+              }))}
             />
             <SettingsButton
               onClick={preview}
-              disabled={voices.length === 0 || voiceDisabled}
+              disabled={voices.length === 0 || voiceDisabled || previewing || serviceUp === false}
             >
               {previewing ? <Square size={12} /> : <Play size={12} />}
-              {previewing ? "Stop" : "Test"}
+              {previewing ? "Playing" : "Test"}
             </SettingsButton>
           </div>
         </SettingsRow>
+        {previewError && <p className="px-1 pb-2 text-xs text-[var(--danger)]">{previewError}</p>}
 
-        <SettingsRow label="Speed" hidden={!ttsSupported}>
+        <SettingsRow
+          label="Speed"
+          description="Applies to the browser's backup voice. Astraeya's voices speak at their natural pace."
+        >
           <SettingsSlider
             label="Speech speed"
             value={values.rate}
@@ -196,7 +212,7 @@ export function VoiceSection() {
           />
         </SettingsRow>
 
-        <SettingsRow label="Pitch" hidden={!ttsSupported}>
+        <SettingsRow label="Pitch" description="Backup voice only.">
           <SettingsSlider
             label="Speech pitch"
             value={values.pitch}
@@ -209,7 +225,7 @@ export function VoiceSection() {
           />
         </SettingsRow>
 
-        <SettingsRow label="Volume" hidden={!ttsSupported}>
+        <SettingsRow label="Volume">
           <SettingsSlider
             label="Speech volume"
             value={values.volume}
@@ -225,7 +241,6 @@ export function VoiceSection() {
         <SettingsRow
           label="Read every reply aloud"
           description="Speaks each answer as it finishes, without you pressing anything."
-          hidden={!ttsSupported}
         >
           <SettingsToggle
             label="Read every reply aloud"

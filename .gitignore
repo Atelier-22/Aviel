@@ -64,3 +64,11 @@ Thumbs.db
 # so a moved or newly added .env.example was ignored without anything saying so.
 .env*
 !.env.example
+
+# --- Offline TTS voice models (~1.1 GB): see voices/README.md ---
+voices/
+
+# --- Voice server: its virtualenv and downloaded models (see astraeya-voice/models.json) ---
+astraeya-voice/.venv/
+astraeya-voice/models/
+astraeya-voice/__pycache__/

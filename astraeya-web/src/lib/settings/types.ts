@@ -109,7 +109,8 @@ export interface UserSettings {
     showTypingIndicator: boolean;
   };
   voice: {
-    outputVoice: string | null;
+    /** One of Astraeya's own voice ids, e.g. "af_heart". */
+    outputVoice: string;
     rate: number;
     pitch: number;
     volume: number;
@@ -373,7 +374,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
     showTypingIndicator: true,
   },
   voice: {
-    outputVoice: null,
+    outputVoice: "af_heart",
     rate: 1,
     pitch: 1,
     volume: 1,

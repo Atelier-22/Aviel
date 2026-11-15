@@ -5,15 +5,9 @@
 // Drawn from the analyser's real frequency bins while the microphone is the
 // source. Like the orb it runs on its own animation frame and never re-renders.
 //
-// One honest limitation, stated here because it shapes the code: while Astraeya
-// is speaking there is no audio to analyse. `speechSynthesis` plays through the
-// browser's own output and exposes no stream, no AudioNode and no amplitude —
-// there is nothing to attach an AnalyserNode to. So the speaking waveform is
-// driven by the synthesiser's own `onboundary` events, which are real signals
-// emitted as each word is actually spoken, rather than by amplitude. It is not
-// a loop pretending to be audio; it is the real word-level timing of the real
-// utterance, which is the most the platform gives us. `speechEnergyRef` carries
-// that value.
+// While Astraeya is speaking, the waveform follows the real loudness of its
+// voice: the audio plays through an AnalyserNode (lib/voice/tts.ts), and
+// `speechEnergyRef` carries that level.
 
 import { useEffect, useRef } from "react";
 import type { VoiceState } from "@/lib/voice/voice-state";

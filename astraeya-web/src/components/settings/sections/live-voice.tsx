@@ -12,7 +12,7 @@ import {
   StatusPill,
 } from "../primitives";
 import { useSection } from "../use-section";
-import { useSpeechVoices } from "@/lib/speech";
+import { useSpeechSupport } from "@/lib/speech";
 
 /** The states a live session moves through. Shown so the UI is predictable. */
 const STATES: { id: string; label: string; description: string }[] = [
@@ -28,7 +28,7 @@ const STATES: { id: string; label: string; description: string }[] = [
 export function LiveVoiceSection() {
   const { values, set, reset, resetting, saveState, error, meta } =
     useSection("liveVoice");
-  const { ttsSupported, sttSupported } = useSpeechVoices();
+  const { ttsSupported, sttSupported } = useSpeechSupport();
 
   const browserCapable = ttsSupported && sttSupported;
   const disabledByAdmin =
@@ -51,7 +51,7 @@ export function LiveVoiceSection() {
         <Callout tone="warn" title="Not available in this browser">
           Live voice needs both speech recognition and speech synthesis.{" "}
           {!sttSupported && "This browser has no speech recognition. "}
-          {!ttsSupported && "This browser has no speech synthesis. "}
+          {!ttsSupported && "This browser cannot play audio. "}
           Chrome and Edge support both.
         </Callout>
       )}

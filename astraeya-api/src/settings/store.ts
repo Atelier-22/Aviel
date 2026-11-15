@@ -9,6 +9,7 @@
 //
 // Callers see one nested `UserSettings` object and never touch either shape.
 
+import { normalizeVoiceId } from "../voice/catalogue";
 import { eq } from "drizzle-orm";
 import { db, schema } from "../db";
 import {
@@ -89,7 +90,7 @@ const SCALAR_MIRRORS: {
     write: (v) => v === "enter",
   },
   { group: "conversation", key: "saveConversations", column: "chatHistoryEnabled", read: (v) => v, write: (v) => v },
-  { group: "voice", key: "outputVoice", column: "voiceName", read: (v) => v, write: (v) => v },
+  { group: "voice", key: "outputVoice", column: "voiceName", read: (v) => normalizeVoiceId(v), write: (v) => normalizeVoiceId(v) },
   {
     group: "voice",
     key: "inputLanguage",

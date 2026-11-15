@@ -11,7 +11,7 @@ import { API_BASE_URL, toApiError } from "./api";
  * not an httpOnly session cookie. `getSession()` reads it back out through
  * NextAuth's own endpoint.
  */
-async function authHeaders(): Promise<Record<string, string>> {
+export async function authHeaders(): Promise<Record<string, string>> {
   const session = await getSession();
   const token = session?.accessToken;
   return token ? { Authorization: `Bearer ${token}` } : {};

@@ -32,11 +32,10 @@ import {
   haptic,
   playCue,
   recognitionLanguage,
-  speak,
-  stopSpeaking,
-  useSpeechVoices,
   type SpeechRecognitionLike,
 } from "@/lib/speech";
+import { readAloud, stopReading } from "@/lib/voice/tts";
+import { VoiceNotice } from "@/components/voice/voice-notice";
 import { MAX_DICTATION_MS, shouldRestartDictation } from "@/lib/voice/dictation";
 
 type Message = {
@@ -98,7 +97,6 @@ export function ChatWindow({
 }) {
   const router = useRouter();
   const { settings, meta } = useSettingsStore();
-  const { voices } = useSpeechVoices();
 
   const conv = settings.conversation;
   const voice = settings.voice;
@@ -168,7 +166,7 @@ export function ChatWindow({
     setMicSupported(Boolean(getSpeechRecognition()));
   }, []);
 
-  useEffect(() => () => stopSpeaking(), []);
+  useEffect(() => () => stopReading(), []);
 
   /**
    * Tell the user a reply landed while they were looking elsewhere.
@@ -637,7 +635,7 @@ export function ChatWindow({
 
     const v = settingsRef.current.voice;
     if (v.autoReadReplies) {
-      speak(text, v, voices, undefined, settingsRef.current.language.voiceOutput);
+      readAloud(text, { voice: v.outputVoice, volume: v.volume, rate: v.rate, pitch: v.pitch });
     }
 
     // Continuous mode listens again for the next thing you say.
@@ -803,6 +801,7 @@ export function ChatWindow({
 
   return (
     <div className="flex h-full flex-col bg-[var(--bg-primary)]">
+      <VoiceNotice />
       {/* Top bar: the conversation's name, and nothing that competes with it.
           Deleting, renaming and pinning live in the sidebar's menu for each
           chat. On a phone, the left padding clears the menu button. */}

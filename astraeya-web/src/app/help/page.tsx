@@ -26,6 +26,10 @@ const FAQ = [
     a: "Yes, if your browser supports speech recognition — Chrome and Edge do, Firefox and Safari do not. The microphone is in the composer. You can change the language it listens for in Settings → Voice.",
   },
   {
+    q: "Can it read answers aloud?",
+    a: "Yes. Press the speaker under any reply, or turn on Settings → Voice → Read every reply aloud. Astraeya uses its own voices (Heart is the default), made on Astraeya's server, so they sound the same on every device. Choose a voice in Settings → Voice.",
+  },
+  {
     q: "Can it read images and files?",
     a: "Images, yes — attach one and ask about it. PDFs and text files are stored and named but their contents are not read yet.",
   },
@@ -81,6 +85,35 @@ export default function HelpPage() {
           </details>
         ))}
       </div>
+
+      <section id="voice-credits" className="mt-10 rounded-xl border border-[var(--border-subtle)] px-4 py-4">
+        <p className="text-sm font-medium">Voice credits</p>
+        <div className="mt-1 space-y-2 text-sm leading-relaxed text-[var(--text-secondary)]">
+          <p>
+            Astraeya&apos;s voices run on its own server, using open models:
+          </p>
+          <ul className="list-disc space-y-1 pl-5">
+            <li>
+              <a href="https://huggingface.co/hexgrad/Kokoro-82M" target="_blank" rel="noreferrer noopener" className="text-accent hover:underline">
+                Kokoro-82M
+              </a>{" "}
+              by hexgrad, licensed under the Apache License 2.0. Used for Heart and the other Kokoro voices.
+            </li>
+            <li>
+              <a href="https://github.com/OHF-Voice/piper1-gpl" target="_blank" rel="noreferrer noopener" className="text-accent hover:underline">
+                Piper
+              </a>{" "}
+              voices: Cori (high), Kristin, John and Norman (LibriVox recordings compiled by Bryce Beattie, public domain), LJ Speech (public domain), Joe (CC0), Cori (medium) and Kathleen.
+            </li>
+            <li>
+              Cori (medium) and Kathleen: voice trained on the Hi-Fi Multi-Speaker English TTS Dataset (NVIDIA, reader 92, Cori Samuel), CC BY 4.0,{" "}
+              <a href="https://www.openslr.org/109/" target="_blank" rel="noreferrer noopener" className="text-accent hover:underline">
+                https://www.openslr.org/109/
+              </a>
+            </li>
+          </ul>
+        </div>
+      </section>
 
       <div className="mt-10 rounded-xl border border-[var(--border-subtle)] px-4 py-4">
         <p className="text-sm font-medium">Still stuck?</p>

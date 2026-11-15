@@ -10,10 +10,11 @@
 // Interruption is real: while Astraeya is speaking the analyser keeps running, and
 // sustained speech over it cancels the utterance and hands the turn back.
 //
-// What is honestly not possible here, stated rather than faked: speechSynthesis
-// exposes no audio stream, so the orb cannot react to the *amplitude* of Astraeya's
-// voice. It reacts instead to the synthesiser's own word-boundary events, which
-// are real per-word signals from the real utterance. See VoiceWaveform.
+// Speaking: the reply is cut into sentences as it streams in, and each one is
+// sent to Astraeya's voice server the moment it is complete, so the first
+// sentence plays while the rest is still being written. The orb follows the
+// real loudness of that audio. If the voice server is down, the browser's own
+// voice takes over and the screen says so.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -32,11 +33,8 @@ import { apiFetch, apiStream } from "@/lib/api-client";
 import {
   getSpeechRecognition,
   haptic,
-  pickVoice,
   playCue,
   recognitionLanguage,
-  stopSpeaking,
-  useSpeechVoices,
   type SpeechRecognitionLike,
 } from "@/lib/speech";
 import { AudioEngine } from "@/lib/voice/audio-engine";
@@ -45,6 +43,15 @@ import {
   canTransition,
   type VoiceState,
 } from "@/lib/voice/voice-state";
+import { SentenceStream } from "@/lib/voice/sentences";
+import {
+  VoicePlayer,
+  groupVoices,
+  loadVoices,
+  playPreview,
+  unlockAudio,
+  type AstraeyaVoice,
+} from "@/lib/voice/tts";
 import { VoiceOrb } from "./voice-orb";
 import { VoiceWaveform } from "./voice-waveform";
 
@@ -70,7 +77,16 @@ export function LiveVoiceScreen({
 }) {
   const router = useRouter();
   const { settings, meta, update } = useSettingsStore();
-  const { voices } = useSpeechVoices();
+  const [voices, setVoices] = useState<AstraeyaVoice[]>([]);
+  const playerRef = useRef<VoicePlayer | null>(null);
+  /** "Using a quicker voice…", or the browser-voice backup notice. */
+  const [voiceNotice, setVoiceNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadVoices()
+      .then((list) => setVoices(list.voices))
+      .catch(() => setVoices([]));
+  }, []);
 
   const [state, setStateRaw] = useState<VoiceState>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -170,7 +186,8 @@ export function LiveVoiceScreen({
     recognitionRef.current?.abort();
     recognitionRef.current = null;
     abortRef.current?.abort();
-    stopSpeaking();
+    playerRef.current?.stop();
+    playerRef.current = null;
     engineRef.current?.stop();
     engineRef.current = null;
     levelRef.current = 0;
@@ -264,93 +281,82 @@ export function LiveVoiceScreen({
   );
 
   /* ---- Speaking ---------------------------------------------------------
-     Boundary events are the only real per-word signal the synthesiser gives,
-     so they drive the orb while Astraeya talks. */
-  const speakReply = useCallback(
-    (text: string) => {
+     A player is made for each reply before it starts streaming; sentences are
+     queued as they complete. The orb follows the real loudness of the audio. */
+  const beginSpeech = useCallback(
+    (): VoicePlayer | null => {
+      if (!settingsRef.current.liveVoice.autoResponse || typeof window === "undefined") return null;
+      playerRef.current?.stop();
       const v = settingsRef.current.voice;
 
-      if (!settingsRef.current.liveVoice.autoResponse || typeof window === "undefined") {
-        setState("listening");
-        return;
-      }
-      if (!("speechSynthesis" in window)) {
-        // No synthesiser: the reply is still on screen, so the session
-        // continues rather than dead-ending.
-        setState("listening");
-        startListening();
-        return;
-      }
+      const player: VoicePlayer = new VoicePlayer({
+        voice: v.outputVoice,
+        mode: "live",
+        volume: v.volume,
+        rate: v.rate,
+        pitch: v.pitch,
+        onNotice: (message) => setVoiceNotice(message),
+        onStart: () => {
+          if (playerRef.current !== player) return;
+          setState("speaking");
 
-      setState("speaking");
-      window.speechSynthesis.cancel();
-
-      const u = new SpeechSynthesisUtterance(text);
-      u.rate = v.rate;
-      u.pitch = v.pitch;
-      u.volume = v.volume;
-      const voice = pickVoice(v, voices, settingsRef.current.language.voiceOutput);
-      if (voice) {
-        u.voice = voice;
-        u.lang = voice.lang;
-      }
-
-      // Each word spoken bumps the energy; it decays between words, which is
-      // what gives the orb its cadence.
-      u.onboundary = () => {
-        speechEnergyRef.current = 1;
-      };
-
-      const decay = () => {
-        speechEnergyRef.current *= 0.9;
-        if (stateRef.current === "speaking") requestAnimationFrame(decay);
-      };
-      requestAnimationFrame(decay);
-
-      const done = () => {
-        speechEnergyRef.current = 0;
-        if (stateRef.current !== "speaking") return;
-        if (settingsRef.current.liveVoice.continuousListening) {
-          setState("listening");
-          startListening();
-        } else {
-          setState("idle");
-        }
-      };
-
-      u.onend = done;
-      u.onerror = done;
-      window.speechSynthesis.speak(u);
-
-      // Interruption watch: the analyser keeps running while Astraeya talks, and
-      // sustained speech over it hands the turn back.
-      if (settingsRef.current.liveVoice.allowInterrupt) {
-        let loudFrames = 0;
-        const watch = () => {
-          if (stateRef.current !== "speaking") return;
-          interruptRaf.current = requestAnimationFrame(watch);
-          if (engineRef.current?.isLoud()) {
-            loudFrames++;
-            // ~200ms of sustained sound. Echo cancellation removes most of
-            // Astraeya's own voice, and this clears what it does not.
-            if (loudFrames > 12) {
-              loudFrames = 0;
-              window.speechSynthesis.cancel();
+          const pumpEnergy = () => {
+            if (stateRef.current !== "speaking" || playerRef.current !== player) {
               speechEnergyRef.current = 0;
-              setState("interrupted");
-              haptic(settingsRef.current.voice);
-              setState("listening");
-              startListening();
+              return;
             }
-          } else {
-            loudFrames = Math.max(0, loudFrames - 1);
+            speechEnergyRef.current = player.energy();
+            requestAnimationFrame(pumpEnergy);
+          };
+          requestAnimationFrame(pumpEnergy);
+
+          // Interruption watch: the analyser keeps running while Astraeya
+          // talks, and sustained speech over it hands the turn back at once.
+          if (settingsRef.current.liveVoice.allowInterrupt) {
+            let loudFrames = 0;
+            const watch = () => {
+              if (stateRef.current !== "speaking" || playerRef.current !== player) return;
+              interruptRaf.current = requestAnimationFrame(watch);
+              if (engineRef.current?.isLoud()) {
+                loudFrames++;
+                // ~200ms of sustained sound. Echo cancellation removes most of
+                // Astraeya's own voice, and this clears what it does not.
+                if (loudFrames > 12) {
+                  loudFrames = 0;
+                  player.stop();
+                  abortRef.current?.abort();
+                  playerRef.current = null;
+                  speechEnergyRef.current = 0;
+                  setState("interrupted");
+                  haptic(settingsRef.current.voice);
+                  setState("listening");
+                  startListening();
+                }
+              } else {
+                loudFrames = Math.max(0, loudFrames - 1);
+              }
+            };
+            interruptRaf.current = requestAnimationFrame(watch);
           }
-        };
-        interruptRaf.current = requestAnimationFrame(watch);
-      }
+        },
+        onEnd: () => {
+          if (playerRef.current !== player) return;
+          playerRef.current = null;
+          speechEnergyRef.current = 0;
+          if (stateRef.current !== "speaking" && stateRef.current !== "processing") return;
+          if (settingsRef.current.liveVoice.continuousListening) {
+            setState("listening");
+            startListening();
+          } else {
+            setState("idle");
+          }
+        },
+      });
+      playerRef.current = player;
+      return player;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [voices, setState]
+    [setState]
   );
 
   /* ---- Sending a turn ---- */
@@ -373,6 +379,9 @@ export function LiveVoiceScreen({
 
       const controller = new AbortController();
       abortRef.current = controller;
+      // Made now, so the first sentence is spoken while the rest still streams.
+      const player = beginSpeech();
+      const sentences = new SentenceStream();
 
       try {
         const res = await apiStream(
@@ -414,6 +423,7 @@ export function LiveVoiceScreen({
               convRef.current = data.conversationId;
             } else if (type === "chunk") {
               full += data.text;
+              if (player) for (const sentence of sentences.push(data.text)) player.enqueue(sentence);
               // Streamed into the transcript as it arrives, per the brief.
               setTurns((prev) =>
                 prev.map((t) => (t.id === id ? { ...t, text: full } : t))
@@ -426,15 +436,21 @@ export function LiveVoiceScreen({
 
         if (!full.trim()) throw new Error("No reply came back.");
         exchangesRef.current += 1;
-        speakReply(full);
+        if (player) {
+          for (const sentence of sentences.end()) player.enqueue(sentence);
+          player.end();
+        } else {
+          setState("listening");
+        }
       } catch (err) {
         if ((err as Error).name === "AbortError") return;
+        player?.stop();
         setError(err instanceof Error ? err.message : "Something went wrong.");
         setState("error");
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [setState, speakReply]
+    [setState, beginSpeech]
   );
 
   /* ---- Listening ---- */
@@ -506,6 +522,8 @@ export function LiveVoiceScreen({
 
   /* ---- Starting the session ---- */
   const begin = useCallback(async () => {
+    // Started by a tap, which is when the browser allows audio to be unlocked.
+    unlockAudio();
     setError(null);
     setState("connecting");
 
@@ -584,26 +602,11 @@ export function LiveVoiceScreen({
    * the speakers apart from a person.
    */
   const previewVoice = useCallback(() => {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-
     const wasListening = stateRef.current === "listening";
     if (wasListening) {
       recognitionRef.current?.abort();
       recognitionRef.current = null;
       engineRef.current?.setMuted(true);
-    }
-
-    window.speechSynthesis.cancel();
-
-    const v = settingsRef.current.voice;
-    const u = new SpeechSynthesisUtterance("This is how I'll sound.");
-    u.rate = v.rate;
-    u.pitch = v.pitch;
-    u.volume = v.volume;
-    const voice = pickVoice(v, voices, settingsRef.current.language.voiceOutput);
-    if (voice) {
-      u.voice = voice;
-      u.lang = voice.lang;
     }
 
     const restore = () => {
@@ -612,18 +615,20 @@ export function LiveVoiceScreen({
       engineRef.current?.setMuted(false);
       if (stateRef.current === "listening") startListening();
     };
-    u.onend = restore;
-    u.onerror = restore;
 
     setPreviewing(true);
-    window.speechSynthesis.speak(u);
-  }, [voices, startListening]);
+    const v = settingsRef.current.voice;
+    playPreview(v.outputVoice, v.volume)
+      .catch(() => setVoiceNotice("The voice preview isn't available right now."))
+      .finally(restore);
+  }, [startListening]);
 
   const pause = useCallback(() => {
     recognitionRef.current?.abort();
     recognitionRef.current = null;
     engineRef.current?.setMuted(true);
-    stopSpeaking();
+    playerRef.current?.stop();
+    playerRef.current = null;
     setState("paused");
   }, [setState]);
 
@@ -723,6 +728,11 @@ export function LiveVoiceScreen({
           {error && state === "error" ? "I couldn't hear that." : copy.label}
         </p>
         <p className="voice-hint">{error ?? copy.hint}</p>
+        {voiceNotice && !error && (
+          <p className="voice-hint" role="status">
+            {voiceNotice}
+          </p>
+        )}
 
         {error && state === "error" && (
           <button type="button" onClick={begin} className="voice-retry">
@@ -836,17 +846,12 @@ export function LiveVoiceScreen({
             <p className="voice-sheet-title">Voice</p>
             <SheetSelect
               label="Speaking voice"
-              value={settings.voice.outputVoice ?? ""}
-              onChange={(v) =>
-                void update({ voice: { outputVoice: v || null } })
-              }
-              options={[
-                { value: "", label: "System default" },
-                ...voices.map((v) => ({
-                  value: v.name,
-                  label: `${v.name} — ${v.lang}`,
-                })),
-              ]}
+              value={settings.voice.outputVoice}
+              onChange={(v) => void update({ voice: { outputVoice: v } })}
+              groups={groupVoices(voices).map((g) => ({
+                label: g.label,
+                options: g.voices.map((v) => ({ value: v.id, label: v.label })),
+              }))}
               after={
                 <button
                   type="button"
@@ -950,7 +955,7 @@ export function LiveVoiceScreen({
             <p className="voice-sheet-note">
               {localOnly
                 ? "A local model is available on this server, so this conversation can be processed without leaving it."
-                : "This conversation is processed by a hosted service. Speech recognition and playback stay in your browser — no audio is uploaded."}
+                : "Your words are recognised in your browser; no recording of your voice is uploaded. The text of each reply goes to Astraeya's own server to be spoken, and nothing goes to any other company. The audio is not stored."}
             </p>
 
             <button
@@ -1055,13 +1060,16 @@ function SheetRange({
 function SheetSelect({
   label,
   value,
-  options,
+  options = [],
+  groups,
   onChange,
   after,
 }: {
   label: string;
   value: string;
-  options: { value: string; label: string }[];
+  options?: { value: string; label: string }[];
+  /** Shown as labelled groups, e.g. Female / Male. */
+  groups?: { label: string; options: { value: string; label: string }[] }[];
   onChange: (v: string) => void;
   after?: React.ReactNode;
 }) {
@@ -1079,6 +1087,15 @@ function SheetSelect({
             <option key={o.value} value={o.value}>
               {o.label}
             </option>
+          ))}
+          {groups?.map((g) => (
+            <optgroup key={g.label} label={g.label}>
+              {g.options.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </optgroup>
           ))}
         </select>
         {after}

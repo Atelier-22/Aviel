@@ -131,13 +131,12 @@ export function PrivacySection() {
                 ? "Your messages are answered by a model running on the Astraeya server itself. Nothing is sent to an external AI provider."
                 : "Some requests are processed by an external AI provider. Your messages, and any images you attach, are sent to it to be answered. It is not told who you are."}
             </p>
-            {!processedLocally && (
-              <p className="mt-1.5 text-xs leading-relaxed text-[var(--text-secondary)]">
-                Voice is the exception either way: speech recognition and speech
-                synthesis run entirely in your browser, and no audio is ever
-                uploaded.
-              </p>
-            )}
+            <p className="mt-1.5 text-xs leading-relaxed text-[var(--text-secondary)]">
+              Voice: your speech is turned into text in your browser, and no
+              recording of your voice is uploaded. Replies read aloud are made
+              into speech on Astraeya&apos;s own server from the reply&apos;s
+              text; that text goes nowhere else, and the audio is not stored.
+            </p>
           </div>
         </div>
       </div>

@@ -1,4 +1,5 @@
-# Render blueprint — provisions the Astraeya API service and its Postgres database.
+# Render blueprint — provisions the Astraeya API service, its voice server and
+# its Postgres database.
 #
 # To use: Render Dashboard -> New -> Blueprint -> pick this repo. Render reads
 # this file, creates both resources, and wires DATABASE_URL between them.
@@ -102,6 +103,49 @@ services:
         sync: false
       - key: CORS_ORIGINS
         sync: false
+      # The voice server below, reached over Render's private network.
+      - key: VOICE_SERVICE_URL
+        fromService:
+          type: pserv
+          name: astraeya-voice
+          property: hostport
+      - key: VOICE_SECRET
+        fromService:
+          type: pserv
+          name: astraeya-voice
+          envVarKey: VOICE_SECRET
+
+  # Astraeya's voice: Kokoro and Piper, on the CPU. A private service, so it
+  # has no public URL and only the API can reach it; and a separate one, so a
+  # crash or a slow sentence here never takes chat down.
+  #
+  # Standard (2 GB RAM, 1 CPU) is the smallest plan that fits: Kokoro needs
+  # about 1 GB once loaded, each Piper voice about 150 MB. On one CPU Kokoro
+  # takes a few seconds per sentence, so live mode automatically uses the fast
+  # Piper voices (Kristin / John) while read-aloud keeps the chosen voice.
+  #
+  # The ~1 GB of models is downloaded during the build and checked against the
+  # SHA-256 in models.json; a mismatch fails the build rather than starting on
+  # a model nobody tested.
+  - type: pserv
+    name: astraeya-voice
+    runtime: python
+    plan: standard
+    region: oregon
+    rootDir: astraeya-voice
+    buildCommand: pip install -r requirements.txt && python download_models.py
+    startCommand: python server.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.14.0
+      - key: HOST
+        value: 0.0.0.0
+      - key: VOICE_MODELS_DIR
+        value: ./models
+      - key: VOICE_THREADS
+        value: "1"
+      - key: VOICE_SECRET
+        generateValue: true
 
 databases:
   - name: astraeya-db

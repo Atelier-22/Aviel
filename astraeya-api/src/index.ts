@@ -21,6 +21,8 @@ import { sessionsRouter } from "./routes/sessions.routes";
 import { systemRouter } from "./routes/system.routes";
 import { filesRouter, shareRouter } from "./routes/files.routes";
 import { mediaRouter } from "./routes/media.routes";
+import { voiceRouter } from "./routes/voice.routes";
+import { startVoiceProbe } from "./voice/voice.service";
 import { startMediaWorker } from "./services/media.service";
 import {
   libraryRouter,
@@ -86,6 +88,7 @@ app.use("/system", systemRouter);
 app.use("/files", filesRouter);
 app.use("/share", shareRouter);
 app.use("/media", mediaRouter);
+app.use("/voice", voiceRouter);
 app.use("/library", libraryRouter);
 app.use("/usage", usageRouter);
 app.use("/feedback", feedbackRouter);
@@ -165,6 +168,10 @@ async function start() {
   // Videos are made in the background; this moves them along and delivers
   // them, including any left running when the server last stopped.
   startMediaWorker();
+
+  // Learns how fast the default voice is, so live mode knows whether it
+  // needs the fast voices from the first session.
+  startVoiceProbe();
 
   const server = app.listen(env.PORT, () => {
     console.log(`Astraeya API listening on port ${env.PORT}`);

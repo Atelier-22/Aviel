@@ -1,20 +1,15 @@
 "use client";
 
-// Astraeya — browser speech.
+// Astraeya — speech recognition and small audio cues, in the browser.
 //
-// One place that reads the voice settings and applies them, so "Read aloud" in
-// a message, the preview button in Settings, and live voice all sound the same.
-// Everything here runs on the device: the Web Speech API never sends audio to a
-// Astraeya server, which is what lets the Voice screen say so plainly.
+// Listening (speech to text) runs in the browser. Speaking is not here: it is
+// Astraeya's own voice server, through lib/voice/tts.ts, which falls back to
+// the browser's voice only when that server cannot be reached.
 
 import { useEffect, useState } from "react";
 import type { UserSettings } from "./settings/types";
 
 type VoiceSettings = UserSettings["voice"];
-
-export function ttsSupported(): boolean {
-  return typeof window !== "undefined" && "speechSynthesis" in window;
-}
 
 export function sttSupported(): boolean {
   if (typeof window === "undefined") return false;
@@ -62,96 +57,19 @@ export interface SpeechRecognitionLike {
 }
 
 /**
- * The installed voices.
- *
- * They load asynchronously — the first call routinely returns an empty array,
- * and the event is the only reliable signal that the list is ready.
+ * What this browser can do: speech recognition for listening, and Web Audio
+ * for playing Astraeya's voice. Checked after mount, since neither exists
+ * during server rendering.
  */
-export function useSpeechVoices() {
-  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+export function useSpeechSupport() {
   const [supported, setSupported] = useState({ tts: false, stt: false });
-
   useEffect(() => {
-    setSupported({ tts: ttsSupported(), stt: sttSupported() });
-    if (!ttsSupported()) return;
-
-    const read = () => setVoices(window.speechSynthesis.getVoices());
-    read();
-    window.speechSynthesis.addEventListener("voiceschanged", read);
-    return () =>
-      window.speechSynthesis.removeEventListener("voiceschanged", read);
+    setSupported({
+      tts: typeof window !== "undefined" && ("AudioContext" in window || "webkitAudioContext" in window),
+      stt: sttSupported(),
+    });
   }, []);
-
-  return { voices, ttsSupported: supported.tts, sttSupported: supported.stt };
-}
-
-/**
- * Speak, with the account's chosen voice, speed, pitch and volume.
- *
- * A saved voice may not exist on this device — voices are installed per
- * machine, so falling through to the browser default is the right behaviour
- * rather than failing to speak at all.
- */
-export function speak(
-  text: string,
-  settings: VoiceSettings,
-  voices: SpeechSynthesisVoice[],
-  onEnd?: () => void,
-  /** Settings → Language → Voice output. "auto" follows the chosen voice. */
-  preferredLanguage?: string
-): void {
-  if (!ttsSupported() || !text.trim()) {
-    onEnd?.();
-    return;
-  }
-
-  window.speechSynthesis.cancel();
-
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.rate = settings.rate;
-  utterance.pitch = settings.pitch;
-  utterance.volume = settings.volume;
-
-  const voice = pickVoice(settings, voices, preferredLanguage);
-  if (voice) {
-    utterance.voice = voice;
-    utterance.lang = voice.lang;
-  }
-
-  utterance.onend = () => onEnd?.();
-  utterance.onerror = () => onEnd?.();
-  window.speechSynthesis.speak(utterance);
-}
-
-/**
- * Which installed voice to use.
- *
- * A named voice wins, because it was chosen explicitly. Failing that, the
- * output language picks the first voice for that language. A device with
- * neither falls through to the browser default rather than staying silent —
- * voices are installed per machine, so a saved choice may simply not exist here.
- */
-export function pickVoice(
-  settings: VoiceSettings,
-  voices: SpeechSynthesisVoice[],
-  preferredLanguage?: string
-): SpeechSynthesisVoice | null {
-  if (settings.outputVoice) {
-    const named = voices.find((v) => v.name === settings.outputVoice);
-    if (named) return named;
-  }
-
-  if (preferredLanguage && preferredLanguage !== "auto") {
-    const base = preferredLanguage.split("-")[0].toLowerCase();
-    const match = voices.find((v) => v.lang.toLowerCase().startsWith(base));
-    if (match) return match;
-  }
-
-  return null;
-}
-
-export function stopSpeaking(): void {
-  if (ttsSupported()) window.speechSynthesis.cancel();
+  return { ttsSupported: supported.tts, sttSupported: supported.stt };
 }
 
 /** The recognition language, honouring "detect automatically". */

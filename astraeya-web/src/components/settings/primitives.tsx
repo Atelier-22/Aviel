@@ -217,14 +217,17 @@ export function SettingsToggle({
 export function SettingsDropdown<T extends string>({
   value,
   onChange,
-  options,
+  options = [],
+  groups,
   disabled,
   label,
   className = "",
 }: {
   value: T;
   onChange: (v: T) => void;
-  options: { value: T; label: string; disabled?: boolean }[];
+  options?: { value: T; label: string; disabled?: boolean }[];
+  /** Options under labelled headings, e.g. Female / Male. */
+  groups?: { label: string; options: { value: T; label: string }[] }[];
   disabled?: boolean;
   label: string;
   className?: string;
@@ -241,6 +244,15 @@ export function SettingsDropdown<T extends string>({
         <option key={o.value} value={o.value} disabled={o.disabled}>
           {o.label}
         </option>
+      ))}
+      {groups?.map((g) => (
+        <optgroup key={g.label} label={g.label}>
+          {g.options.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </optgroup>
       ))}
     </select>
   );

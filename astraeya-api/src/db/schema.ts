@@ -144,9 +144,9 @@ export const userSettings = pgTable("user_settings", {
   memoryEnabled: boolean("memory_enabled").notNull().default(true),
   enterToSend: boolean("enter_to_send").notNull().default(true),
   dictationEnabled: boolean("dictation_enabled").notNull().default(true),
-  // Browser speech-synthesis voice name for Read Aloud. Null means the
-  // browser's default, which is all most people ever need.
-  voiceName: text("voice_name"),
+  // One of Astraeya's own voice ids (voice/catalogue.ts) for read-aloud and
+  // live voice. Migration 0015 moved everyone onto af_heart.
+  voiceName: text("voice_name").default("af_heart"),
   // Speech-recognition language for dictation. Separate from `language`, which
   // is interface copy — people often dictate in a different language to the one
   // they read menus in.

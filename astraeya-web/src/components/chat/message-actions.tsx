@@ -18,7 +18,7 @@ import {
 import { apiFetch } from "@/lib/api-client";
 import { downloadMarkdown, downloadWord } from "@/lib/export-reply";
 import { useSettingsGroup } from "@/lib/settings/store";
-import { speak, stopSpeaking, useSpeechVoices } from "@/lib/speech";
+import { readAloud, stopReading } from "@/lib/voice/tts";
 
 type Feedback = "up" | "down" | null;
 
@@ -40,23 +40,15 @@ export function MessageActions({
   variant?: "assistant" | "user";
 }) {
   const voice = useSettingsGroup("voice");
-  const language = useSettingsGroup("language");
-  const { voices } = useSpeechVoices();
   const [copied, setCopied] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [speaking, setSpeaking] = useState(false);
+  // Astraeya's voices play through Web Audio, which every current browser has.
   const [ttsSupported, setTtsSupported] = useState(false);
   const [downloadOpen, setDownloadOpen] = useState(false);
 
   useEffect(() => {
-    setTtsSupported(
-      typeof window !== "undefined" && "speechSynthesis" in window
-    );
-    return () => {
-      if (typeof window !== "undefined" && "speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
-      }
-    };
+    setTtsSupported(typeof window !== "undefined" && ("AudioContext" in window || "webkitAudioContext" in window));
   }, []);
 
   async function handleCopy() {
@@ -98,13 +90,19 @@ export function MessageActions({
   function handleReadAloud() {
     if (!ttsSupported) return;
     if (speaking) {
-      stopSpeaking();
+      stopReading();
       setSpeaking(false);
       return;
     }
     // Voice, speed, pitch and volume all come from the account's settings, so
     // Read Aloud sounds the same here as the preview in Settings does.
-    speak(content, voice, voices, () => setSpeaking(false), language.voiceOutput);
+    readAloud(content, {
+      voice: voice.outputVoice,
+      volume: voice.volume,
+      rate: voice.rate,
+      pitch: voice.pitch,
+      onEnd: () => setSpeaking(false),
+    });
     setSpeaking(true);
   }
 
