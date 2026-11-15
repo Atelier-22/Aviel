@@ -12,6 +12,8 @@
 
 import { and, eq, inArray, lt, sql } from "drizzle-orm";
 import { db, schema } from "../db";
+import { deleteStoredFile } from "../ai/file-store";
+import { getPlatformConfig } from "../settings/platform";
 
 export interface SweepResult {
   conversationsDeleted: number;
@@ -141,7 +143,33 @@ export async function sweepAll(): Promise<SweepResult> {
     }
   }
 
+  // Made files expire for everyone, whatever their own settings say: they
+  // are copies the person has already downloaded, kept in a paid store.
+  try {
+    const { limits } = await getPlatformConfig();
+    total.assetsDeleted += await sweepMadeFiles(limits.madeFileRetentionDays);
+  } catch (err) {
+    console.error("Made-file sweep failed:", err instanceof Error ? err.message : err);
+  }
+
   return total;
+}
+
+/** Deletes made files older than `days`, in the provider's store and here. */
+export async function sweepMadeFiles(days: number): Promise<number> {
+  const old = await db
+    .select({ id: schema.generatedFiles.id, providerFileId: schema.generatedFiles.providerFileId })
+    .from(schema.generatedFiles)
+    .where(lt(schema.generatedFiles.createdAt, cutoff(days)))
+    .limit(1000);
+  if (old.length === 0) return 0;
+
+  // The provider copy first: a row left behind can be retried next sweep, a
+  // stored file whose row is gone would never be found again.
+  const gone = await Promise.all(old.map((f) => deleteStoredFile(f.providerFileId)));
+  const ids = old.filter((_, i) => gone[i]).map((f) => f.id);
+  if (ids.length) await db.delete(schema.generatedFiles).where(inArray(schema.generatedFiles.id, ids));
+  return ids.length;
 }
 
 const SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000; // four times a day

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import {
   Download,
+  Eye,
   FileArchive,
   FileCode,
   FileSpreadsheet,
@@ -68,6 +69,21 @@ function FileCard({ file }: { file: MadeFile }) {
   const { label, Icon } = kindOf(file);
   const size = formatSize(file.sizeBytes);
   const isImage = file.mediaType.startsWith("image/");
+  const isPdf = file.mediaType === "application/pdf";
+
+  // Opens in the browser's own PDF viewer, which on a phone is the system one.
+  async function preview() {
+    setError(null);
+    const tab = window.open("", "_blank");
+    try {
+      const url = `${await liveUrl(file)}&inline=1`;
+      if (tab) tab.location.href = url;
+      else window.location.href = url;
+    } catch {
+      tab?.close();
+      setError("Couldn't open the file. It may have expired; ask again to remake it.");
+    }
+  }
 
   // A plain navigation rather than fetch-and-blob: phones hand it to their own
   // download manager, which copes with slow connections and resumes.
@@ -77,7 +93,7 @@ function FileCard({ file }: { file: MadeFile }) {
     try {
       window.location.href = await liveUrl(file);
     } catch {
-      setError("Couldn't get the file. Try again.");
+      setError("Couldn't get the file. It may have expired; ask again to remake it.");
     } finally {
       setBusy(false);
     }
@@ -107,6 +123,17 @@ function FileCard({ file }: { file: MadeFile }) {
             {error && <span className="ml-1 text-[var(--danger)]">{error}</span>}
           </span>
         </span>
+        {isPdf && (
+          <button
+            type="button"
+            onClick={preview}
+            className="flex min-h-[40px] items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]"
+            aria-label={`Preview ${file.filename}`}
+          >
+            <Eye size={16} />
+            <span className="max-sm:sr-only">Preview</span>
+          </button>
+        )}
         <button
           type="button"
           onClick={download}

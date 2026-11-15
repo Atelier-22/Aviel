@@ -16,6 +16,7 @@ type Limits = {
   messagesPerDay: number;
   imageGenerationsPerDay: number;
   filesPerDay: number;
+  madeFileRetentionDays: number;
   imageUploadsPerDay: number;
   voiceMinutesPerDay: number;
   maxUploadMb: number;
@@ -73,6 +74,7 @@ const LIMIT_LABELS: { key: keyof Limits; label: string; hint: string }[] = [
   { key: "messagesPerDay", label: "Messages per day", hint: "0 means no limit" },
   { key: "imageGenerationsPerDay", label: "Image generations per day", hint: "0 means no limit" },
   { key: "filesPerDay", label: "Files created per day", hint: "Documents, slides, sheets and charts. 0 means no limit" },
+  { key: "madeFileRetentionDays", label: "Keep made files for (days)", hint: "1–30. Older files are deleted automatically" },
   { key: "imageUploadsPerDay", label: "Image uploads per day", hint: "0 means no limit" },
   { key: "voiceMinutesPerDay", label: "Voice minutes per day", hint: "0 means no limit" },
   { key: "maxUploadMb", label: "Maximum file size (MB)", hint: "1–100" },

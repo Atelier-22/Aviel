@@ -22,11 +22,14 @@ export async function openStoredFile(providerFileId: string): Promise<Response> 
 }
 
 /** Best effort: a file already gone is not an error. */
-export async function deleteStoredFile(providerFileId: string): Promise<void> {
+/** True once the stored copy is gone (already missing counts as gone). */
+export async function deleteStoredFile(providerFileId: string): Promise<boolean> {
   try {
     await getClient().files.delete(providerFileId);
+    return true;
   } catch (err) {
-    if (err instanceof Anthropic.NotFoundError) return;
+    if (err instanceof Anthropic.NotFoundError) return true;
     console.error("Could not delete a stored file:", err instanceof Error ? err.message : err);
+    return false;
   }
 }

@@ -65,6 +65,9 @@ export const platformConfigSchema = z.object({
       // Each file request runs code in a sandbox, which costs more than a
       // reply. 0 means no limit.
       filesPerDay: z.number().int().min(0).default(30),
+      // Made files are deleted this many days after they were made, here and
+      // in the provider's store. 1–30.
+      madeFileRetentionDays: z.number().int().min(1).max(30).default(7),
       imageUploadsPerDay: z.number().int().min(0).default(0),
       voiceMinutesPerDay: z.number().int().min(0).default(0),
       // Documents are read on the server, so this is generous. Images have
