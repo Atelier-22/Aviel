@@ -1,8 +1,8 @@
-# Aviel
+# Astraeya
 
 Built in Uganda. Designed for the world.
 
-Aviel AI is a general-purpose AI platform — chat with Claude, organised into
+Astraeya is a general-purpose AI platform — chat with Claude, organised into
 projects, with conversation history, per-user preferences, and a memory the
 assistant can draw on. It runs on the web and on phones, off one backend.
 
@@ -10,13 +10,13 @@ assistant can draw on. It runs on the web and on phones, off one backend.
 
 | Folder | What it is | Runs on |
 | --- | --- | --- |
-| [`Aviel-api/`](Aviel-api/) | Express + PostgreSQL API. Owns the database, auth, and every call to Claude | Render |
-| [`Aviel-web/`](Aviel-web/) | Next.js web frontend | Vercel |
-| [`Aviel-mobile/`](Aviel-mobile/) | React Native + Expo app | Expo / EAS |
+| [`astraeya-api/`](astraeya-api/) | Express + PostgreSQL API. Owns the database, auth, and every call to Claude | Render |
+| [`astraeya-web/`](astraeya-web/) | Next.js web frontend | Vercel |
+| [`astraeya-mobile/`](astraeya-mobile/) | React Native + Expo app | Expo / EAS |
 
 ```
   Browser  ──┐
-             ├──►  Aviel-api (Render)  ──►  PostgreSQL
+             ├──►  astraeya-api (Render)  ──►  PostgreSQL
   Phone    ──┘            │
                           └──────────────►  Claude (Anthropic)
 ```
@@ -29,21 +29,21 @@ API key never leaves the backend — neither client holds a secret.
 
 ```bash
 # Backend — start this first, the clients need it
-cd Aviel-api
+cd astraeya-api
 npm install
 cp .env.example .env      # set DATABASE_URL, JWT_SECRET, ANTHROPIC_API_KEY
 npm run dev               # http://localhost:4000
 
 # Web frontend
-cd Aviel-web
+cd astraeya-web
 npm install
 cp .env.example .env.local  # set NEXTAUTH_SECRET
 npm run dev                 # http://localhost:3000
 ```
 
 Each project has its own README with the detail:
-[Aviel-api](Aviel-api/README.md) · [Aviel-web](Aviel-web/README.md) ·
-[Aviel-mobile](Aviel-mobile/README.md)
+[astraeya-api](astraeya-api/README.md) · [astraeya-web](astraeya-web/README.md) ·
+[astraeya-mobile](astraeya-mobile/README.md)
 
 ## Deployment
 

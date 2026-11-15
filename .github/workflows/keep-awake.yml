@@ -27,8 +27,8 @@ jobs:
       - name: Ping the API
         env:
           # The live hostname, which is a Render resource and has nothing to do
-          # with what this repository calls itself. Renaming the project from
-          # Hetex to Aviel did NOT rename the deployed service, so the default
+          # with what this repository calls itself. Renaming the project to
+          # Astraeya did NOT rename the deployed service, so the default
           # below is deliberately still the real host.
           #
           # To point this somewhere else, set an API_HEALTH_URL repository
