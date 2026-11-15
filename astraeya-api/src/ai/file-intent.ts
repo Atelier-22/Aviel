@@ -15,6 +15,13 @@ const FILE_KINDS =
 const IMAGE_EDIT =
   /\b(crop|resize|rotate|flip|compress|sharpen|blur|brighten|darken|contrast|saturat\w*|black and white|grayscale|greyscale|sepia|watermark|add text|caption|border|frame|collage|convert|png|jpe?g|webp|background|remove the background|make it (?:smaller|bigger|brighter|darker)|enhance|edit|adjust|filter)\b/i;
 
+/** Websites and code delivered as files, not pasted into the reply. */
+const CODE_FILES =
+  /\b(as (?:a |real )?files|website files|site files|project files|source files|index\.html|style\.css|script\.js|\.py file|python file|html file|downloadable (?:website|site|app|project|code)|(?:website|site|web ?page|landing page|portfolio|web app) (?:i can|to) download|zip(?:ped)?|folder)\b/i;
+
+const RUN_CODE =
+  /\b(run|execute|test)\s+(?:this|the|my|that|these|it)\s*(?:python|javascript|js)?\s*(code|script|program|snippet|function|notebook)?\b(?=[\s\S]*(```|\bdef |\bimport |\bprint\(|console\.log|\bfunction\b))|\b(run|execute)\s+(?:this|the|my|that)\s+(?:python|javascript|js)?\s*(code|script|program)\b/i;
+
 export interface FileIntentInput {
   message: string;
   /** Media types of the files attached to this message. */
@@ -28,6 +35,14 @@ export function wantsFileOutput({ message, attachmentTypes }: FileIntentInput): 
   // "Make me a PowerPoint on…", "turn these notes into a Word document",
   // "plot this data as a bar chart".
   if (MAKE.test(text) && FILE_KINDS.test(text)) return true;
+
+  // "Give me my portfolio as files", "build me a website I can download",
+  // "zip these up".
+  if (MAKE.test(text) && CODE_FILES.test(text)) return true;
+  if (/\b(zip|\.zip)\b/i.test(text)) return true;
+
+  // "Run this code", "test my Python script": executed in the sandbox.
+  if (RUN_CODE.test(text)) return true;
 
   // An attached image with an editing request: "crop this", "make it black and
   // white", "remove the background".

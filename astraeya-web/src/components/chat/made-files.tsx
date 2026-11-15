@@ -3,6 +3,8 @@
 import { useState } from "react";
 import {
   Download,
+  FileArchive,
+  FileCode,
   FileSpreadsheet,
   FileText,
   File as FileIcon,
@@ -12,6 +14,11 @@ import {
 } from "lucide-react";
 import { API_BASE_URL } from "@/lib/api";
 import { apiFetch } from "@/lib/api-client";
+
+const CODE_EXTS: Record<string, string> = {
+  html: "Web page", htm: "Web page", css: "Stylesheet", js: "JavaScript", ts: "TypeScript",
+  py: "Python", json: "JSON", java: "Java", c: "C", cpp: "C++", sql: "SQL", txt: "Text",
+};
 
 /** A file Astraeya made, as the API hands it over: a signed, expiring link. */
 export type MadeFile = {
@@ -34,6 +41,8 @@ function kindOf(file: MadeFile): { label: string; Icon: typeof FileIcon } {
   if (t.includes("wordprocessing") || ext === "docx") return { label: "Word", Icon: FileText };
   if (t === "application/pdf" || ext === "pdf") return { label: "PDF", Icon: FileText };
   if (ext === "md") return { label: "Markdown", Icon: FileText };
+  if (t.includes("zip") || ext === "zip") return { label: "Zip folder", Icon: FileArchive };
+  if (CODE_EXTS[ext]) return { label: CODE_EXTS[ext], Icon: FileCode };
   return { label: ext.toUpperCase() || "File", Icon: FileIcon };
 }
 

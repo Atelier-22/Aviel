@@ -21,6 +21,20 @@ describe("wantsFileOutput", () => {
     assert.equal(ask("Convert this Word document to PDF", ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"]), true);
   });
 
+  it("recognises websites, code files and zips", () => {
+    assert.equal(ask("Give me my portfolio as files"), true);
+    assert.equal(ask("Build me a website with index.html, style.css and script.js"), true);
+    assert.equal(ask("zip these up for me"), true);
+    assert.equal(ask("Create a Python file that sorts my marks"), true);
+  });
+
+  it("runs code only when there is code to run", () => {
+    assert.equal(ask("Run this code:\n```python\nprint(2**10)\n```"), true);
+    assert.equal(ask("can you run my python script"), true);
+    assert.equal(ask("How do I run a Python script on Windows?"), false);
+    assert.equal(ask("What does a website need to load fast?"), false);
+  });
+
   it("recognises image edits only when an image is attached", () => {
     assert.equal(ask("crop this and make it black and white", ["image/jpeg"]), true);
     assert.equal(ask("crop this and make it black and white"), false);

@@ -79,6 +79,8 @@ filesRouter.get(
     // Private to the person holding the link; never stored by a shared cache.
     res.setHeader("Cache-Control", "private, no-store");
     res.setHeader("X-Content-Type-Options", "nosniff");
+    // A made .html or .svg file must never run as a page on this domain.
+    res.setHeader("Content-Security-Policy", "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'");
     const length = upstream.headers.get("content-length");
     if (length) res.setHeader("Content-Length", length);
 

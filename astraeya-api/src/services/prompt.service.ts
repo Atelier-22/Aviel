@@ -375,6 +375,9 @@ export const FILE_MAKING_NOTE = (uploadNames: string[]) =>
 - Make it look professionally finished: real headings, consistent fonts, tables where the content is tabular, page numbers on documents longer than one page, a table of contents for long reports, speaker notes on slides when useful. Letters get a letterhead with the sender's details. If the user gave a name, organisation, logo, colours or a template, use them.
 - For data: check it before charting, label axes and units, and save charts as PNG as well as placing them in the document or workbook when one was asked for. Spreadsheets get real formulas where totals or calculations belong, not pasted numbers.
 - To convert a file, keep its content and structure intact and only change the format.
+- A request for a portfolio, site or project "as files" means a website, not a document: at least index.html, style.css and script.js. Make a document only if they name one (PDF, Word, CV).
+- Websites and code projects: write each file (for example index.html, style.css, script.js) so it works when opened straight from the download, with relative paths between them. When there is more than one file, also save a single .zip of the project with a clear name, and save the files themselves too.
+- When asked to run code, run it and report the real output and any errors exactly as they came out. Never invent output.
 - When the request is unclear on something that matters (length, audience, style), make a sensible choice and say what you chose, rather than stopping to ask.
 - The user downloads the files from cards shown under your reply. Do not paste the file's contents back, do not mention sandbox paths, directories or links, and do not tell them to look for a link. In two or three sentences, say what you made and offer to change anything.
 - If something cannot be done in the file, say so plainly rather than claiming it was done.${
