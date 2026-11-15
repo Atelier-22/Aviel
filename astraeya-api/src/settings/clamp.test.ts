@@ -82,14 +82,13 @@ describe("platform clamping", () => {
     assert.equal(clampToPlatform(settings, config).liveVoice.saveAudio, false);
   });
 
-  it("refuses image generation, because nothing implements it", () => {
+  it("allows image generation only while the platform offers it", () => {
     const settings = mergeSettings(defaultSettings(), {
       images: { generationEnabled: true },
     });
-    assert.equal(
-      clampToPlatform(settings, config).images.generationEnabled,
-      false
-    );
+    assert.equal(clampToPlatform(settings, config).images.generationEnabled, true);
+    const off = { ...config, features: { ...config.features, imageGeneration: false } };
+    assert.equal(clampToPlatform(settings, off).images.generationEnabled, false);
   });
 
   it("forces file storage back to the only backend that exists", () => {
@@ -122,9 +121,16 @@ describe("platform config", () => {
     assert.equal(next.limits.maxUploadMb, config.limits.maxUploadMb);
   });
 
-  it("starts with image generation and billing off", () => {
-    assert.equal(config.features.imageGeneration, false);
+  it("starts with image generation on (it also needs FAL_KEY) and billing off", () => {
+    assert.equal(config.features.imageGeneration, true);
     assert.equal(config.billingConfigured, false);
+  });
+
+  it("caps paid generation by default", () => {
+    assert.ok(config.limits.imageGenerationsPerDay > 0);
+    assert.ok(config.limits.videoGenerationsPerDay > 0);
+    assert.ok(config.limits.dailySpendCentsPerUser > 0);
+    assert.ok(config.limits.maxVideoSeconds <= 15);
   });
 
   it("does not reveal vendor names by default", () => {

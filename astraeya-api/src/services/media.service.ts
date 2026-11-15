@@ -579,6 +579,12 @@ async function advanceVideo(job: JobRow, canStart: boolean) {
       enable_safety_checker: true,
       ...(p.startImage ? { start_image_url: p.startImage } : { aspect_ratio: p.aspect }),
     };
+    const claimed = await db
+      .update(schema.mediaJobs)
+      .set({ status: "processing", updatedAt: new Date() })
+      .where(and(eq(schema.mediaJobs.id, job.id), eq(schema.mediaJobs.status, "queued")))
+      .returning({ id: schema.mediaJobs.id });
+    if (claimed.length === 0) return;
     const queue = await submit(job.model, input, webhookUrl(job.id));
     await updateJob(job.id, {
       status: "processing",
@@ -612,13 +618,22 @@ async function advanceVideo(job: JobRow, canStart: boolean) {
 
 async function runSlideshow(job: JobRow) {
   if (!readyToDeliver(job)) return;
-  await updateJob(job.id, { status: "processing" });
   const p = job.params as {
     slides: { heading?: string; text?: string; image_prompt?: string }[];
     aspect: AspectRatio;
     secondsPerSlide: number;
     colors: string[];
   };
+  // Pictures need the media service; an instance without it leaves the job
+  // for one that has it (the timeout still ends it if none does).
+  if (p.slides.some((sl) => sl.image_prompt?.trim()) && !mediaServiceConfigured()) return;
+  // Claimed in one statement, so two workers never render the same job.
+  const claimed = await db
+    .update(schema.mediaJobs)
+    .set({ status: "processing", updatedAt: new Date() })
+    .where(and(eq(schema.mediaJobs.id, job.id), eq(schema.mediaJobs.status, "queued")))
+    .returning({ id: schema.mediaJobs.id });
+  if (claimed.length === 0) return;
 
   const slides: Slide[] = [];
   let pictureCost = 0;
@@ -685,12 +700,16 @@ export async function tickJobs(): Promise<void> {
           continue;
         }
         if (job.kind === "slideshow") {
-          await runSlideshow(job);
-        } else if (job.kind === "video") {
-          if (!mediaServiceConfigured()) {
-            await fail(job, "Video generation is not set up on this server.");
+          // A render left half-done by a restart starts again.
+          if (job.status === "processing" && Date.now() - job.updatedAt.getTime() > 5 * 60 * 1000) {
+            await updateJob(job.id, { status: "queued" });
             continue;
           }
+          if (job.status === "queued") await runSlideshow(job);
+        } else if (job.kind === "video") {
+          // Another instance with the key may own it; the timeout above
+          // still ends it if none does.
+          if (!mediaServiceConfigured()) continue;
           const canStart = running < config.limits.maxConcurrentVideos;
           const wasQueued = job.status === "queued";
           await advanceVideo(job, canStart);

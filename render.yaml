@@ -94,6 +94,12 @@ services:
       #   CORS_ORIGINS      — your Vercel URL, e.g. https://astraeya.vercel.app
       - key: ANTHROPIC_API_KEY
         sync: false
+      # Image, logo and AI video generation. Optional; see .env.example.
+      - key: FAL_KEY
+        sync: false
+      # This service's own public URL, for the "video ready" webhook. Optional.
+      - key: PUBLIC_API_URL
+        sync: false
       - key: CORS_ORIGINS
         sync: false
 
