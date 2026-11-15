@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { ChatWindow } from "@/components/chat/chat-window";
 import { serverApiFetch } from "@/lib/api-server";
-import type { MadeFile } from "@/components/chat/made-files";
+import type { MadeFile, MediaJob } from "@/components/chat/made-files";
 
 type ConversationDetail = {
   id: string;
@@ -12,6 +12,7 @@ type ConversationDetail = {
     content: string;
     createdAt: string;
     files?: MadeFile[];
+    jobs?: MediaJob[];
   }[];
 };
 
@@ -39,6 +40,7 @@ export default async function ChatPage({
         content: m.content,
         createdAt: m.createdAt,
         files: m.files,
+        jobs: m.jobs,
       }))}
     />
   );

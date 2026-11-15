@@ -22,7 +22,7 @@ import {
   X,
 } from "lucide-react";
 import { MessageBubble } from "./message-bubble";
-import type { MadeFile } from "./made-files";
+import type { MadeFile, MediaJob } from "./made-files";
 import { Composer, type ThinkMode } from "./composer";
 import { AstraeyaIcon } from "../logo";
 import { useSettingsStore } from "@/lib/settings/store";
@@ -56,6 +56,8 @@ type Message = {
   saved?: boolean;
   /** Files Astraeya made with this reply. */
   files?: MadeFile[];
+  /** Videos being made for this reply. */
+  jobs?: MediaJob[];
   /** Progress while the reply is being worked on, e.g. "Creating your file…". */
   status?: string;
 };
@@ -431,6 +433,7 @@ export function ChatWindow({
           assistantMessageId?: string | null;
           reply: string;
           files?: MadeFile[];
+          jobs?: MediaJob[];
           model?: string;
           processedLocally?: boolean;
           sources?: { title: string; url: string }[];
@@ -443,6 +446,7 @@ export function ChatWindow({
                   ...m,
                   content: result.reply,
                   files: result.files,
+                  jobs: result.jobs,
                   model: result.model,
                   processedLocally: result.processedLocally,
                 }
@@ -524,6 +528,14 @@ export function ChatWindow({
               prev.map((m) =>
                 m.id === assistantId
                   ? { ...m, files: [...(m.files ?? []), data.file as MadeFile] }
+                  : m
+              )
+            );
+          } else if (eventType === "job") {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId
+                  ? { ...m, jobs: [...(m.jobs ?? []), data.job as MediaJob] }
                   : m
               )
             );
@@ -634,8 +646,8 @@ export function ChatWindow({
     }
   }
 
-  async function sendMessage() {
-    const text = input.trim();
+  async function sendMessage(override?: string) {
+    const text = (override ?? input).trim();
     if ((!text && pendingFiles.length === 0) || isStreaming) return;
 
     // "Ask before analysing" is a privacy check, so it only asks when the image
@@ -883,6 +895,12 @@ export function ChatWindow({
                   }
                   isLatest={m.id === latestAssistantId}
                   files={m.files}
+                  jobs={m.jobs}
+                  onRegenerateMedia={
+                    m.role === "assistant" && !isStreaming
+                      ? () => void sendMessage("Make another version of that image, with a fresh variation.")
+                      : undefined
+                  }
                   status={m.status}
                   onRetry={
                     m.role === "assistant" ? () => regenerateResponse(m.id) : undefined

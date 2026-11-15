@@ -15,6 +15,10 @@ type Features = Record<string, boolean>;
 type Limits = {
   messagesPerDay: number;
   imageGenerationsPerDay: number;
+  videoGenerationsPerDay: number;
+  maxVideoSeconds: number;
+  maxConcurrentVideos: number;
+  dailySpendCentsPerUser: number;
   filesPerDay: number;
   madeFileRetentionDays: number;
   imageUploadsPerDay: number;
@@ -72,7 +76,11 @@ const FEATURE_LABELS: Record<string, string> = {
 
 const LIMIT_LABELS: { key: keyof Limits; label: string; hint: string }[] = [
   { key: "messagesPerDay", label: "Messages per day", hint: "0 means no limit" },
-  { key: "imageGenerationsPerDay", label: "Image generations per day", hint: "0 means no limit" },
+  { key: "imageGenerationsPerDay", label: "Image generations per day", hint: "Images, logos and edits. 0 means no limit" },
+  { key: "videoGenerationsPerDay", label: "Videos per day", hint: "AI videos and slideshows. 0 means no limit" },
+  { key: "maxVideoSeconds", label: "Longest AI video (seconds)", hint: "3–15. Each second costs about $0.14" },
+  { key: "maxConcurrentVideos", label: "Videos rendering at once", hint: "For the whole platform; the rest wait in a queue" },
+  { key: "dailySpendCentsPerUser", label: "Daily generation budget per user (US cents)", hint: "Images and video together. 0 means no limit" },
   { key: "filesPerDay", label: "Files created per day", hint: "Documents, slides, sheets and charts. 0 means no limit" },
   { key: "madeFileRetentionDays", label: "Keep made files for (days)", hint: "1–30. Older files are deleted automatically" },
   { key: "imageUploadsPerDay", label: "Image uploads per day", hint: "0 means no limit" },

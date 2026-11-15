@@ -139,7 +139,9 @@ export async function renderSlideshow(opts: SlideshowOptions): Promise<{ mp4: Bu
     const chains = framesPng.map(
       (_, i) =>
         `[${i}:v]scale=${w * 2}:${h * 2},zoompan=z='min(zoom+0.0006,1.06)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${Math.round(d * 30)}:s=${w}x${h}:fps=30,` +
-        `fade=t=in:st=0:d=${FADE},fade=t=out:st=${(d - FADE).toFixed(2)}:d=${FADE},format=yuv420p,setsar=1[v${i}]`
+        // The first slide starts fully visible, so the player's still frame
+        // shows the video rather than black.
+        `${i === 0 ? "" : `fade=t=in:st=0:d=${FADE},`}fade=t=out:st=${(d - FADE).toFixed(2)}:d=${FADE},format=yuv420p,setsar=1[v${i}]`
     );
     const filter = `${chains.join(";")};${framesPng.map((_, i) => `[v${i}]`).join("")}concat=n=${n}:v=1:a=0[out]`;
     const output = path.join(dir, "slideshow.mp4");

@@ -5,7 +5,7 @@ import remarkGfm from "remark-gfm";
 import { Cloud, HardDrive } from "lucide-react";
 import { CodeBlock } from "./code-block";
 import { MessageActions } from "./message-actions";
-import { MadeFiles, type MadeFile } from "./made-files";
+import { MadeFiles, type MadeFile, type MediaJob } from "./made-files";
 import { SvgPreview, extractSvg } from "./svg-preview";
 import { useSettingsGroup } from "@/lib/settings/store";
 
@@ -24,6 +24,8 @@ export function MessageBubble({
   showTypingIndicator = true,
   isLatest = false,
   files = [],
+  jobs = [],
+  onRegenerateMedia,
   status,
 }: {
   id?: string;
@@ -44,6 +46,10 @@ export function MessageBubble({
   isLatest?: boolean;
   /** Files Astraeya made with this reply. */
   files?: MadeFile[];
+  /** Videos being made for this reply. */
+  jobs?: MediaJob[];
+  /** Asks for another version of an image made in this reply. */
+  onRegenerateMedia?: () => void;
   /** What is happening while a reply is being worked on, e.g. "Creating your file…". */
   status?: string;
 }) {
@@ -163,7 +169,7 @@ export function MessageBubble({
         )}
       </div>
 
-      {!isUser && <MadeFiles files={files} />}
+      {!isUser && <MadeFiles files={files} jobs={jobs} onRegenerate={onRegenerateMedia} />}
 
       {!isUser && status && isStreaming && content && (
         <span className="mt-2 flex items-center gap-2 text-sm text-[var(--text-secondary)]" role="status">
