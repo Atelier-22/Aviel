@@ -18,6 +18,7 @@ Settings (environment):
     VOICE_WORKERS     sentences made in parallel (default: number of CPU cores)
     VOICE_SECRET      shared secret expected in X-Voice-Secret (unset = no check, for local use)
     VOICE_KOKORO_MODEL  kokoro-v1.0.onnx (default) or kokoro-v1.0.fp16.onnx (faster on CPU)
+    VOICE_DEVICE      cpu (default) or cuda (NVIDIA GPU, with onnxruntime-gpu)
     PORT              default 5005
 """
 
@@ -51,6 +52,18 @@ SECRET = os.environ.get("VOICE_SECRET", "")
 # Which Kokoro build to run: the full model (default) or the official 16-bit
 # build of the same model, which is faster on a CPU. Same voices either way.
 KOKORO_MODEL = os.environ.get("VOICE_KOKORO_MODEL", "kokoro-v1.0.onnx")
+# "cuda" runs on an NVIDIA GPU (needs onnxruntime-gpu; see Dockerfile.gpu),
+# falling back to the CPU if no GPU is usable. On a GPU, Heart is made many
+# times faster than it plays, so speech starts at once and never pauses.
+DEVICE = os.environ.get("VOICE_DEVICE", "cpu").lower()
+
+
+def providers() -> list:
+    if DEVICE == "cuda" and "CUDAExecutionProvider" in ort.get_available_providers():
+        return ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    if DEVICE == "cuda":
+        print("[voice] VOICE_DEVICE=cuda but no usable GPU; running on the CPU", flush=True)
+    return ["CPUExecutionProvider"]
 # Voices loaded at start-up rather than on first use: live mode's fast voices.
 PRELOAD = [v for v in os.environ.get("VOICE_PRELOAD", "").split(",") if v]
 
@@ -80,7 +93,7 @@ def load_kokoro() -> Kokoro:
     session = ort.InferenceSession(
         str(MODELS / "kokoro" / KOKORO_MODEL),
         sess_options=session_options(),
-        providers=["CPUExecutionProvider"],
+        providers=providers(),
     )
     kokoro = Kokoro.from_session(session, str(MODELS / "kokoro" / "voices-v1.0.bin"))
     # kokoro-onnx 0.4.7 passes "speed" as int32 for this model, which expects
@@ -119,7 +132,7 @@ class Engines:
             if voice_id in VOICES and VOICES[voice_id]["engine"] == "piper":
                 self.piper_voice(voice_id)
                 list(self.piper[voice_id].synthesize("Ready."))
-        print(f"[voice] Kokoro ({KOKORO_MODEL}) and {len(PRELOAD)} Piper voice(s) ready in {time.perf_counter() - started:.1f}s, {WORKERS} parallel x {THREADS} thread(s), models in {MODELS}", flush=True)
+        print(f"[voice] Kokoro ({KOKORO_MODEL}) and {len(PRELOAD)} Piper voice(s) ready in {time.perf_counter() - started:.1f}s, {WORKERS} parallel x {THREADS} thread(s) on {providers()[0]}, models in {MODELS}", flush=True)
 
     def piper_voice(self, voice_id: str) -> PiperVoice:
         with self.load_lock:
@@ -127,7 +140,7 @@ class Engines:
                 gender = VOICES[voice_id]["gender"]
                 path = MODELS / "piper" / gender / f"{voice_id}.onnx"
                 voice = PiperVoice.load(str(path))
-                voice.session = ort.InferenceSession(str(path), sess_options=session_options(), providers=["CPUExecutionProvider"])
+                voice.session = ort.InferenceSession(str(path), sess_options=session_options(), providers=providers())
                 self.piper[voice_id] = voice
             return self.piper[voice_id]
 

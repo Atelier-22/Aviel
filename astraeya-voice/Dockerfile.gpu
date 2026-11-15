@@ -1,0 +1,26 @@
+# Astraeya's voice server on an NVIDIA GPU (RunPod, Modal, or any host with
+# CUDA 12). Untested on real GPU hardware so far: check /health and the
+# start-up log line, which names the execution provider in use.
+#
+#   docker build -f Dockerfile.gpu -t astraeya-voice-gpu .
+#   docker run --gpus all -p 5005:5005 -e VOICE_SECRET=... astraeya-voice-gpu
+FROM nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04
+
+RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv python3-pip ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY requirements.txt requirements-gpu.txt ./
+# piper-tts pulls in the CPU onnxruntime; it is removed so only the GPU build
+# is loaded, then the GPU build is reinstalled cleanly.
+RUN python3 -m venv /venv && /venv/bin/pip install --no-cache-dir -r requirements-gpu.txt     && /venv/bin/pip uninstall -y onnxruntime     && /venv/bin/pip install --no-cache-dir --force-reinstall --no-deps onnxruntime-gpu==1.32.0
+COPY server.py download_models.py models.json voices.json pronunciations.json ./
+# Models are fetched and checksum-checked at build time, so the image starts fast.
+RUN VOICE_MODELS_DIR=/app/models /venv/bin/python download_models.py
+
+ENV VOICE_MODELS_DIR=/app/models \
+    VOICE_DEVICE=cuda \
+    VOICE_WORKERS=2 \
+    HOST=0.0.0.0 \
+    PORT=5005
+EXPOSE 5005
+CMD ["/venv/bin/python", "server.py"]

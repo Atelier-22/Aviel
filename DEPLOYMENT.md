@@ -176,6 +176,26 @@ gap-free speech run the voice server on a GPU, or on 8 or more fast cores.
 `VOICE_KOKORO_MODEL=kokoro-v1.0.fp16.onnx` selects Kokoro's official 16-bit
 build of the same voices, roughly 1.4× faster on a CPU.
 
+### Production: the voice server on a GPU (the chosen setup)
+
+`astraeya-voice/Dockerfile.gpu` builds the voice server for an NVIDIA GPU
+(CUDA 12): GPU onnxruntime, models downloaded and checksum-checked into the
+image, `VOICE_DEVICE=cuda`. Not yet tried on real GPU hardware; the start-up
+log names the provider in use (`CUDAExecutionProvider` means the GPU is
+working, `CPUExecutionProvider` means it fell back).
+
+1. Build and push the image, then run it on a GPU host (RunPod, Modal, or
+   any CUDA 12 machine) with `--gpus all`, port 5005, and a long random
+   `VOICE_SECRET`. Serve it over HTTPS.
+2. On the Render API service, set `VOICE_SERVICE_URL` to that HTTPS address
+   and `VOICE_SECRET` to the same secret. Remove the `astraeya-voice`
+   private service from `render.yaml` (or leave it suspended as a backup).
+3. Check: `GET /health` on the voice host, then read a reply aloud. On a GPU,
+   first audio should arrive in well under a second.
+
+Keep at least one GPU instance always on: a cold start reloads the models
+and takes several seconds, which is exactly the delay this setup removes.
+
 ---
 
 ## Local development
@@ -242,6 +262,7 @@ than a style preference.
 | `VOICE_THREADS` | no | CPU threads per sentence; `1` on Standard |
 | `VOICE_WORKERS` | no | Pieces made at once; defaults to the number of CPU cores |
 | `VOICE_KOKORO_MODEL` | no | `kokoro-v1.0.onnx` (default) or `kokoro-v1.0.fp16.onnx` (faster on CPU) |
+| `VOICE_DEVICE` | no | `cpu` (default) or `cuda` on a GPU host |
 | `VOICE_PRELOAD` | no | Piper voices to load at start-up (none by default) |
 | `HOST` / `PORT` | no | `0.0.0.0` on Render, which sets `PORT` |
 

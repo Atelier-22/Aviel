@@ -119,6 +119,11 @@ services:
   # has no public URL and only the API can reach it; and a separate one, so a
   # crash or a slow sentence here never takes chat down.
   #
+  # Production plan: the voice server runs on a GPU host instead (see
+  # DEPLOYMENT.md, "the voice server on a GPU"); point the API's
+  # VOICE_SERVICE_URL there and remove this service. It stays here as the
+  # CPU fallback.
+  #
   # Standard (2 GB RAM, 1 CPU) is the smallest plan that fits in memory, but
   # one CPU makes Heart (Kokoro) slower than real time: speech starts late and
   # pauses between pieces. For instant, continuous speech use a plan with more
