@@ -329,7 +329,7 @@ export function VoiceSection() {
 
         <SettingsRow
           label="Microphone behaviour"
-          description="Tap starts and stops. Hold listens only while the button is held. Continuous keeps listening until you stop it."
+          description="Tap starts and stops, and keeps listening through pauses for up to 20 minutes. Hold listens only while the button is held. Continuous also starts listening again after each reply."
         >
           <SegmentedControl
             label="Microphone behaviour"

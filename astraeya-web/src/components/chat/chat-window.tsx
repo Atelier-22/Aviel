@@ -37,6 +37,7 @@ import {
   useSpeechVoices,
   type SpeechRecognitionLike,
 } from "@/lib/speech";
+import { MAX_DICTATION_MS, shouldRestartDictation } from "@/lib/voice/dictation";
 
 type Message = {
   id: string;
@@ -207,25 +208,62 @@ export function ChatWindow({
   // The mic is shown when the browser supports it and the account wants it.
   const showMic = micSupported && voice.dictationEnabled;
 
-  const stopListening = useCallback(() => {
-    recognitionRef.current?.stop();
+  // One dictation spans many browser recognition sessions. The browser ends
+  // a session at a pause or after about a minute; while the person still
+  // wants to dictate, the next one starts at once (see lib/voice/dictation).
+  const dictation = useRef({
+    wanted: false,
+    startedAt: 0,
+    sessionStartedAt: 0,
+    heard: false,
+    quickFailures: 0,
+    lastError: null as string | null,
+    restartTimer: null as ReturnType<typeof setTimeout> | null,
+    limitTimer: null as ReturnType<typeof setTimeout> | null,
+  });
+
+  const finishDictation = useCallback(() => {
+    const d = dictation.current;
+    d.wanted = false;
+    if (d.restartTimer) clearTimeout(d.restartTimer);
+    if (d.limitTimer) clearTimeout(d.limitTimer);
+    d.restartTimer = d.limitTimer = null;
     recognitionRef.current = null;
     setIsListening(false);
     setInterim("");
   }, []);
 
-  const startListening = useCallback(() => {
+  const stopListening = useCallback(() => {
+    const d = dictation.current;
+    d.wanted = false;
+    if (d.restartTimer) clearTimeout(d.restartTimer);
+    // stop(), not abort(): the browser still hands over what it heard last.
+    const recognition = recognitionRef.current;
+    if (recognition) recognition.stop();
+    finishDictation();
+  }, [finishDictation]);
+
+  const beginSessionRef = useRef<() => void>(() => {});
+  beginSessionRef.current = () => {
     const Recognition = getSpeechRecognition();
-    if (!Recognition) return;
+    const d = dictation.current;
+    if (!Recognition || !d.wanted) return;
 
     const v = settingsRef.current.voice;
     const recognition = new Recognition();
     recognition.lang = recognitionLanguage(v);
-    recognition.continuous = v.micMode === "continuous";
+    // Always continuous: "tap" mode used to end at the first pause.
+    recognition.continuous = true;
     recognition.interimResults = v.liveTranscription;
     recognition.maxAlternatives = 1;
 
+    d.sessionStartedAt = Date.now();
+    d.heard = false;
+    d.lastError = null;
+
     recognition.onresult = (event) => {
+      d.heard = true;
+      d.quickFailures = 0;
       let finalText = "";
       let interimText = "";
 
@@ -238,28 +276,73 @@ export function ChatWindow({
       setInterim(v.liveTranscription ? interimText : "");
 
       if (finalText) {
-        setInput((prev) => (prev ? `${prev} ${finalText}` : finalText).trim());
+        setInput((prev) => (prev ? `${prev} ${finalText.trim()}` : finalText.trim()).trim());
         // Auto-submit only makes sense when the user has not asked to review
         // the transcript first; the two settings would otherwise contradict.
+        // It sends what was said and ends this dictation.
         if (v.autoSubmit && !v.editTranscript) {
+          stopListening();
           setTimeout(() => sendRef.current?.(), 60);
         }
       }
     };
 
-    recognition.onerror = () => stopListening();
+    recognition.onerror = (event) => {
+      d.lastError = event.error;
+    };
+
     recognition.onend = () => {
-      setIsListening(false);
+      if (recognitionRef.current !== recognition) return; // an older session
       setInterim("");
-      recognitionRef.current = null;
+      const now = Date.now();
+      if (!d.heard && now - d.sessionStartedAt < 1500) d.quickFailures += 1;
+      if (
+        shouldRestartDictation({
+          wanted: d.wanted,
+          startedAt: d.startedAt,
+          now,
+          lastError: d.lastError,
+          quickFailures: d.quickFailures,
+        })
+      ) {
+        d.restartTimer = setTimeout(() => beginSessionRef.current(), 150);
+      } else {
+        finishDictation();
+      }
     };
 
     recognitionRef.current = recognition;
-    recognition.start();
+    try {
+      recognition.start();
+    } catch {
+      finishDictation();
+    }
+  };
+
+  const startListening = useCallback(() => {
+    if (!getSpeechRecognition()) return;
+    const v = settingsRef.current.voice;
+    const d = dictation.current;
+    d.wanted = true;
+    d.startedAt = Date.now();
+    d.quickFailures = 0;
+    if (d.limitTimer) clearTimeout(d.limitTimer);
+    d.limitTimer = setTimeout(() => {
+      stopListening();
+      playCue("stop", settingsRef.current.voice);
+    }, MAX_DICTATION_MS);
+
+    beginSessionRef.current();
     setIsListening(true);
     playCue("start", v);
     haptic(v);
   }, [stopListening]);
+
+  // Leaving the chat ends the dictation rather than leaving the mic on.
+  useEffect(() => () => {
+    dictation.current.wanted = false;
+    recognitionRef.current?.abort();
+  }, []);
 
   function toggleListening() {
     if (isListening) {
