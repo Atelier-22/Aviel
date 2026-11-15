@@ -19,14 +19,12 @@ import { FrameReader } from "./frames";
 export interface VoicePlayerOptions {
   /** One of Astraeya's voice ids. */
   voice: string;
-  /** "live" lets the server switch to a faster voice when the chosen one is slow. */
-  mode?: "read" | "live";
   /** 0–1. */
   volume?: number;
   /** Speed and pitch apply only to the browser's backup voice. */
   rate?: number;
   pitch?: number;
-  /** Something the person should know: the backup voice, or a faster voice. */
+  /** Something the person should know, e.g. that the browser's backup voice is reading. */
   onNotice?: (message: string) => void;
   /** Called once when the first sound starts. */
   onStart?: () => void;
@@ -34,7 +32,46 @@ export interface VoicePlayerOptions {
   onEnd?: () => void;
 }
 
-const SENTENCE_GAP = 0.12;
+/** Pause after a piece when the server does not say; a natural breath. */
+const DEFAULT_PAUSE = 0.22;
+/** Requests in flight at once for one player: the next pieces are made while this one plays. */
+const MAX_IN_FLIGHT = 3;
+
+type Playable = { buffer: AudioBuffer; pause: number } | { fallback: string[] };
+
+/** A queue that is filled by a download and read, in order, by playback. */
+class Pipe<T> {
+  private items: T[] = [];
+  private waiting: ((v: IteratorResult<T>) => void) | null = null;
+  private closed = false;
+  push(item: T) {
+    if (this.waiting) {
+      const w = this.waiting;
+      this.waiting = null;
+      w({ value: item, done: false });
+    } else this.items.push(item);
+  }
+  close() {
+    this.closed = true;
+    if (this.waiting) {
+      const w = this.waiting;
+      this.waiting = null;
+      w({ value: undefined as never, done: true });
+    }
+  }
+  async *[Symbol.asyncIterator](): AsyncGenerator<T> {
+    for (;;) {
+      if (this.items.length) {
+        yield this.items.shift()!;
+        continue;
+      }
+      if (this.closed) return;
+      const next = await new Promise<IteratorResult<T>>((r) => (this.waiting = r));
+      if (next.done) return;
+      yield next.value;
+    }
+  }
+}
 
 let sharedContext: AudioContext | null = null;
 
@@ -50,6 +87,18 @@ function audioContext(): AudioContext | null {
 export function unlockAudio() {
   const ctx = audioContext();
   if (ctx?.state === "suspended") void ctx.resume();
+  // A silent blip started inside the gesture is what Safari needs to unlock.
+  if (ctx) {
+    try {
+      const b = ctx.createBuffer(1, 1, 22050);
+      const src = ctx.createBufferSource();
+      src.buffer = b;
+      src.connect(ctx.destination);
+      src.start();
+    } catch {
+      /* nothing to unlock */
+    }
+  }
 }
 
 export class VoicePlayer {
@@ -60,6 +109,9 @@ export class VoicePlayer {
   private nextStart = 0;
   private chain: Promise<void> = Promise.resolve();
   private aborts = new Set<AbortController>();
+  private inFlight = 0;
+  private waitingToFetch: (() => void)[] = [];
+  private sentFirst = false;
   private pending = 0;
   private ended = false;
   private stopped = false;
@@ -85,10 +137,17 @@ export class VoicePlayer {
   enqueue(text: string) {
     if (this.stopped || this.ended || !text.trim()) return;
     this.pending++;
-    this.chain = this.chain.then(() => this.fetchAndSchedule(text)).finally(() => {
-      this.pending--;
-      this.maybeFinish();
-    });
+    const first = !this.sentFirst;
+    this.sentFirst = true;
+    // The download starts now, alongside the others; playback still goes in order.
+    const pipe = new Pipe<Playable>();
+    void this.download(text, first, pipe);
+    this.chain = this.chain
+      .then(() => this.play(pipe))
+      .finally(() => {
+        this.pending--;
+        this.maybeFinish();
+      });
   }
 
   /** No more text is coming; onEnd fires once the queue has been spoken. */
@@ -154,19 +213,36 @@ export class VoicePlayer {
     setTimeout(finish, remaining * 1000 + 50);
   }
 
-  private async fetchAndSchedule(text: string) {
-    if (this.stopped) return;
-    if (this.usingBrowser || !this.ctx) {
-      await this.speakWithBrowser([text]);
+  private async slot(): Promise<void> {
+    if (this.inFlight < MAX_IN_FLIGHT) {
+      this.inFlight++;
       return;
     }
+    await new Promise<void>((r) => this.waitingToFetch.push(r));
+    this.inFlight++;
+  }
+
+  private release() {
+    this.inFlight--;
+    this.waitingToFetch.shift()?.();
+  }
+
+  /** Fetches speech for `text` and feeds decoded pieces into `pipe` as they arrive. */
+  private async download(text: string, first: boolean, pipe: Pipe<Playable>) {
+    if (this.usingBrowser || !this.ctx) {
+      pipe.push({ fallback: [text] });
+      pipe.close();
+      return;
+    }
+    await this.slot();
     const abort = new AbortController();
     this.aborts.add(abort);
     try {
+      if (this.stopped) return;
       const res = await fetch(`${API_BASE_URL}/voice/speak`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(await authHeaders()) },
-        body: JSON.stringify({ text, voice: this.opts.voice, mode: this.opts.mode ?? "read" }),
+        body: JSON.stringify({ text, voice: this.opts.voice, first }),
         signal: abort.signal,
       });
       if (res.status === 204) return;
@@ -177,9 +253,6 @@ export class VoicePlayer {
       }
       if (!res.ok || !res.body) throw new Error(`voice ${res.status}`);
 
-      const substituted = res.headers.get("x-voice-substituted");
-      if (substituted) this.notice("Using a quicker voice so replies start sooner.");
-
       const reader = new FrameReader();
       const stream = res.body.getReader();
       for (;;) {
@@ -187,31 +260,41 @@ export class VoicePlayer {
         if (done || this.stopped) break;
         for (const frame of reader.push(value)) {
           if (frame.header.error) {
-            await this.speakWithBrowser(frame.header.remaining ?? []);
+            pipe.push({ fallback: frame.header.remaining ?? [] });
             return;
           }
-          await this.schedule(frame.audio);
+          const bytes = frame.audio;
+          const buffer = await this.ctx.decodeAudioData(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
+          pipe.push({ buffer, pause: frame.header.pause ?? DEFAULT_PAUSE });
         }
       }
     } catch (err) {
-      if (this.stopped || (err as Error).name === "AbortError") return;
-      await this.speakWithBrowser([text]);
+      if (!this.stopped && (err as Error).name !== "AbortError") pipe.push({ fallback: [text] });
     } finally {
       this.aborts.delete(abort);
+      this.release();
+      pipe.close();
     }
   }
 
-  private async schedule(wav: Uint8Array) {
+  /** Plays one queued text's pieces, back to back, as they become ready. */
+  private async play(pipe: Pipe<Playable>) {
+    for await (const item of pipe) {
+      if (this.stopped) return;
+      if ("fallback" in item) await this.speakWithBrowser(item.fallback);
+      else await this.schedule(item.buffer, item.pause);
+    }
+  }
+
+  private async schedule(buffer: AudioBuffer, pause: number) {
     if (!this.ctx || !this.gain || this.stopped) return;
     if (this.ctx.state === "suspended") await this.ctx.resume().catch(() => undefined);
-    const buffer = await this.ctx.decodeAudioData(wav.buffer.slice(wav.byteOffset, wav.byteOffset + wav.byteLength) as ArrayBuffer);
-    if (this.stopped) return;
     const source = this.ctx.createBufferSource();
     source.buffer = buffer;
     source.connect(this.gain);
     const at = Math.max(this.ctx.currentTime + 0.02, this.nextStart);
     source.start(at);
-    this.nextStart = at + buffer.duration + SENTENCE_GAP;
+    this.nextStart = at + buffer.duration + pause;
     this.sources.add(source);
     source.onended = () => this.sources.delete(source);
     setTimeout(() => this.markStarted(), Math.max(0, (at - this.ctx.currentTime) * 1000));
@@ -262,11 +345,23 @@ export function announceVoiceNotice(message: string) {
 export function readAloud(text: string, opts: VoicePlayerOptions): VoicePlayer {
   stopReading();
   unlockAudio();
-  const player = new VoicePlayer({ onNotice: announceVoiceNotice, ...opts, mode: "read" });
+  const player = new VoicePlayer({ onNotice: announceVoiceNotice, ...opts });
   current = player;
   currentOnEnd = opts.onEnd;
   player.enqueue(text);
   player.end();
+  return player;
+}
+
+/**
+ * Reads a reply aloud while it is still being written: the caller enqueues
+ * each sentence as it completes and calls end() when the reply is done.
+ */
+export function startReading(opts: VoicePlayerOptions): VoicePlayer {
+  stopReading();
+  const player = new VoicePlayer({ onNotice: announceVoiceNotice, ...opts });
+  current = player;
+  currentOnEnd = opts.onEnd;
   return player;
 }
 

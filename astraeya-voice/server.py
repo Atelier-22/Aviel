@@ -14,9 +14,10 @@ still being made.
 
 Settings (environment):
     VOICE_MODELS_DIR  folder with kokoro/ and piper/ (default ../voices)
-    VOICE_THREADS     CPU threads per synthesis (default 1, as on Render Standard)
+    VOICE_THREADS     CPU threads per sentence (default 1)
+    VOICE_WORKERS     sentences made in parallel (default: number of CPU cores)
     VOICE_SECRET      shared secret expected in X-Voice-Secret (unset = no check, for local use)
-    VOICE_PRELOAD     Piper voices to load at start-up (default: live mode's two fast voices)
+    VOICE_KOKORO_MODEL  kokoro-v1.0.onnx (default) or kokoro-v1.0.fp16.onnx (faster on CPU)
     PORT              default 5005
 """
 
@@ -43,9 +44,15 @@ from pydantic import BaseModel, Field
 HERE = Path(__file__).resolve().parent
 MODELS = Path(os.environ.get("VOICE_MODELS_DIR", HERE.parent / "voices")).resolve()
 THREADS = max(1, int(os.environ.get("VOICE_THREADS", "1")))
+# Sentences made at the same time, one per CPU core. While one sentence plays,
+# the next ones are already being made, which is what removes the pauses.
+WORKERS = max(1, int(os.environ.get("VOICE_WORKERS", str(max(1, (os.cpu_count() or 2) // 2)))))
 SECRET = os.environ.get("VOICE_SECRET", "")
+# Which Kokoro build to run: the full model (default) or the official 16-bit
+# build of the same model, which is faster on a CPU. Same voices either way.
+KOKORO_MODEL = os.environ.get("VOICE_KOKORO_MODEL", "kokoro-v1.0.onnx")
 # Voices loaded at start-up rather than on first use: live mode's fast voices.
-PRELOAD = [v for v in os.environ.get("VOICE_PRELOAD", "en_US-kristin-medium,en_US-john-medium").split(",") if v]
+PRELOAD = [v for v in os.environ.get("VOICE_PRELOAD", "").split(",") if v]
 
 CATALOGUE = json.loads((HERE / "voices.json").read_text(encoding="utf-8"))
 VOICES = {v["id"]: v for v in CATALOGUE["voices"]}
@@ -71,7 +78,7 @@ def apply_pronunciations(text: str) -> str:
 
 def load_kokoro() -> Kokoro:
     session = ort.InferenceSession(
-        str(MODELS / "kokoro" / "kokoro-v1.0.onnx"),
+        str(MODELS / "kokoro" / KOKORO_MODEL),
         sess_options=session_options(),
         providers=["CPUExecutionProvider"],
     )
@@ -90,13 +97,17 @@ def load_kokoro() -> Kokoro:
 
 
 class Engines:
-    """Models, loaded once. Synthesis is serialised: with one CPU, running two
-    at once only makes both slower, and a queue keeps the order fair."""
+    """Models, loaded once and shared. Up to WORKERS sentences are made at the
+    same time, each on its own core: onnxruntime runs one session from many
+    threads safely. Turning text into phonemes (espeak) is not known to be
+    thread-safe, so that short step takes a lock."""
 
     def __init__(self) -> None:
         self.kokoro: Kokoro | None = None
         self.piper: dict[str, PiperVoice] = {}
-        self.lock = threading.Lock()
+        self.slots = threading.BoundedSemaphore(WORKERS)
+        self.phonemize_lock = threading.Lock()
+        self.piper_lock = threading.Lock()
         self.load_lock = threading.Lock()
 
     def load(self) -> None:
@@ -107,9 +118,8 @@ class Engines:
         for voice_id in PRELOAD:
             if voice_id in VOICES and VOICES[voice_id]["engine"] == "piper":
                 self.piper_voice(voice_id)
-                with self.lock:
-                    list(self.piper[voice_id].synthesize("Ready."))
-        print(f"[voice] Kokoro and {len(PRELOAD)} fast voice(s) ready in {time.perf_counter() - started:.1f}s, {THREADS} thread(s), models in {MODELS}", flush=True)
+                list(self.piper[voice_id].synthesize("Ready."))
+        print(f"[voice] Kokoro ({KOKORO_MODEL}) and {len(PRELOAD)} Piper voice(s) ready in {time.perf_counter() - started:.1f}s, {WORKERS} parallel x {THREADS} thread(s), models in {MODELS}", flush=True)
 
     def piper_voice(self, voice_id: str) -> PiperVoice:
         with self.load_lock:
@@ -129,14 +139,16 @@ class Engines:
             if self.kokoro is None:
                 raise RuntimeError("Kokoro is not loaded")
             lang = "en-gb" if voice_id.startswith("b") else "en-us"
-            with self.lock:
-                samples, rate = self.kokoro.create(text, voice=voice_id, speed=1.0, lang=lang)
+            with self.phonemize_lock:
+                phonemes = self.kokoro.tokenizer.phonemize(text, lang)
+            with self.slots:
+                samples, rate = self.kokoro.create(phonemes, voice=voice_id, speed=1.0, is_phonemes=True)
             buf = io.BytesIO()
             sf.write(buf, samples, rate, format="WAV", subtype="PCM_16")
             return buf.getvalue(), len(samples) / rate, rate
 
         voice = self.piper_voice(voice_id)
-        with self.lock:
+        with self.slots, self.piper_lock:
             chunks = list(voice.synthesize(text, syn_config=SynthesisConfig(length_scale=1.0)))
         if not chunks:
             raise RuntimeError("no audio")
@@ -205,7 +217,7 @@ def voices(x_voice_secret: str | None = Header(default=None)) -> dict:
 def health() -> dict:
     if engines.kokoro is None:
         raise HTTPException(status_code=503, detail="loading")
-    return {"status": "ok", "threads": THREADS, "piperLoaded": sorted(engines.piper)}
+    return {"status": "ok", "workers": WORKERS, "threads": THREADS, "piperLoaded": sorted(engines.piper)}
 
 
 if __name__ == "__main__":

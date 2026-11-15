@@ -34,7 +34,9 @@ import {
   recognitionLanguage,
   type SpeechRecognitionLike,
 } from "@/lib/speech";
-import { readAloud, stopReading } from "@/lib/voice/tts";
+import { readAloud, startReading, stopReading, unlockAudio, type VoicePlayer } from "@/lib/voice/tts";
+import { SentenceStream } from "@/lib/voice/sentences";
+import { rememberGreeting } from "@/lib/voice/greeting";
 import { VoiceNotice } from "@/components/voice/voice-notice";
 import { MAX_DICTATION_MS, shouldRestartDictation } from "@/lib/voice/dictation";
 
@@ -167,6 +169,15 @@ export function ChatWindow({
   }, []);
 
   useEffect(() => () => stopReading(), []);
+
+  // Makes the live-mode greeting ("Hello Peter, what can I do for you
+  // today?") ahead of time, in the chosen voice, so live mode can say it the
+  // instant it opens. Fire and forget: a failure only means it is made later.
+  useEffect(() => {
+    void apiFetch<{ greeting?: string }>("/voice/warm", { method: "POST" })
+      .then((r) => r?.greeting && rememberGreeting(r.greeting))
+      .catch(() => undefined);
+  }, [settings.voice.outputVoice]);
 
   /**
    * Tell the user a reply landed while they were looking elsewhere.
@@ -321,6 +332,8 @@ export function ChatWindow({
 
   const startListening = useCallback(() => {
     if (!getSpeechRecognition()) return;
+    // The person is about to talk: Astraeya stops talking.
+    stopReading();
     const v = settingsRef.current.voice;
     const d = dictation.current;
     d.wanted = true;
@@ -475,6 +488,22 @@ export function ChatWindow({
       let newConversationId: string | undefined;
       let fullText = "";
 
+      // "Read every reply aloud": speaking starts with the first sentence,
+      // while the rest of the reply is still being written.
+      const vs = settingsRef.current.voice;
+      let speaker: VoicePlayer | null = vs.autoReadReplies
+        ? startReading({
+            voice: vs.outputVoice,
+            volume: vs.volume,
+            rate: vs.rate,
+            pitch: vs.pitch,
+            onEnd: () => {
+              if (vs.micMode === "continuous" && showMic) startListening();
+            },
+          })
+        : null;
+      const spoken = new SentenceStream();
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -545,6 +574,7 @@ export function ChatWindow({
             // sources event arrives.
             setSearching(false);
             fullText += data.text;
+            if (speaker) for (const sentence of spoken.push(data.text)) speaker.enqueue(sentence);
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === assistantId
@@ -553,6 +583,11 @@ export function ChatWindow({
               )
             );
           } else if (eventType === "done") {
+            if (speaker) {
+              for (const sentence of spoken.end()) speaker.enqueue(sentence);
+              speaker.end();
+              speaker = null;
+            }
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === assistantId
@@ -573,7 +608,7 @@ export function ChatWindow({
         }
       }
 
-      afterReply(fullText);
+      afterReply(fullText, settingsRef.current.voice.autoReadReplies);
 
       if (newConversationId) {
         router.push(`/chat/${newConversationId}`);
@@ -628,25 +663,33 @@ export function ChatWindow({
   }
 
   /** Everything that happens once a reply is complete. */
-  function afterReply(text: string) {
+  function afterReply(text: string, alreadyBeingRead = false) {
     if (!text.trim()) return;
 
     notifyIfHidden(text);
 
     const v = settingsRef.current.voice;
-    if (v.autoReadReplies) {
-      readAloud(text, { voice: v.outputVoice, volume: v.volume, rate: v.rate, pitch: v.pitch });
-    }
-
-    // Continuous mode listens again for the next thing you say.
-    if (v.micMode === "continuous" && isListening === false && showMic) {
-      startListening();
+    const listenAgain = () => {
+      // Continuous mode listens again for the next thing you say, but only
+      // once Astraeya has finished talking, so it never hears itself.
+      if (v.micMode === "continuous" && showMic) startListening();
+    };
+    if (v.autoReadReplies && !alreadyBeingRead) {
+      readAloud(text, { voice: v.outputVoice, volume: v.volume, rate: v.rate, pitch: v.pitch, onEnd: listenAgain });
+    } else if (!v.autoReadReplies && isListening === false) {
+      listenAgain();
     }
   }
 
   async function sendMessage(override?: string) {
     const text = (override ?? input).trim();
     if ((!text && pendingFiles.length === 0) || isStreaming) return;
+
+    // Sending is a key press or a tap: the moment the browser allows audio to
+    // be unlocked, so the reply can be read aloud. Anything still being read
+    // stops, because the person has moved on.
+    unlockAudio();
+    stopReading();
 
     // "Ask before analysing" is a privacy check, so it only asks when the image
     // would actually leave this machine — with local-only processing on, or

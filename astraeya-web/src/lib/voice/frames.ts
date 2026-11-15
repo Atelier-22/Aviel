@@ -11,7 +11,8 @@ export interface SpeechFrameHeader {
   text?: string;
   voice?: string;
   seconds?: number;
-  substituted?: boolean;
+  /** Seconds of silence to leave after this piece. */
+  pause?: number;
   /** Set when the rest could not be made; no audio follows. */
   error?: "unavailable" | "failed";
   /** With an error: the sentences that were not spoken. */

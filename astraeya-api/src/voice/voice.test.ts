@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { SentenceStream, speakableText, splitSentences } from "./sentences";
-import { DEFAULT_VOICE, FAST_VOICE, VOICES, findVoice, normalizeVoiceId, voiceLabel } from "./catalogue";
+import { DEFAULT_VOICE, VOICES, findVoice, normalizeVoiceId, voiceLabel } from "./catalogue";
 
 describe("splitSentences", () => {
   it("splits on sentence ends and keeps punctuation", () => {
@@ -81,11 +81,6 @@ describe("voice catalogue", () => {
     assert.equal(voiceLabel(findVoice("bm_george")!), "George (Male, British)");
   });
 
-  it("has fast voices of the right gender", () => {
-    assert.equal(findVoice(FAST_VOICE.female)?.gender, "female");
-    assert.equal(findVoice(FAST_VOICE.male)?.gender, "male");
-  });
-
   it("matches the voice server's catalogue", () => {
     const file = path.join(__dirname, "..", "..", "..", "astraeya-voice", "voices.json");
     if (!existsSync(file)) return; // the API deployed on its own
@@ -99,14 +94,8 @@ describe("voice catalogue", () => {
 });
 
 import { userSettingsSchema, settingsPatchSchema, defaultSettings } from "../settings/schema";
-import {
-  LIVE_FIRST_AUDIO_LIMIT_MS,
-  liveVoiceFor,
-  recordSpeed,
-  resetSpeeds,
-  resetVoiceAllowance,
-  takeVoiceAllowance,
-} from "./voice.service";
+import { greetingFor, resetVoiceAllowance, takeVoiceAllowance } from "./voice.service";
+import { speechPieces } from "./sentences";
 
 describe("the voice setting", () => {
   it("defaults to af_heart for a new account", () => {
@@ -141,27 +130,58 @@ describe("migration 0015", () => {
   });
 });
 
-describe("live mode speed fallback", () => {
-  it("keeps the chosen voice until its speed is known", () => {
-    resetSpeeds();
-    assert.deepEqual(liveVoiceFor("af_heart"), { voice: "af_heart", substituted: false });
+describe("speech pieces", () => {
+  const words = (pieces: { text: string }[]) => pieces.map((p) => p.text).join(" ");
+
+  it("starts with the opening words, up to the first comma", () => {
+    const pieces = speechPieces(["Good question, Brian.", "Next one."]);
+    assert.deepEqual(pieces, [
+      { text: "Good question,", endsSentence: false },
+      { text: "Brian.", endsSentence: true },
+      { text: "Next one.", endsSentence: true },
+    ]);
   });
 
-  it("switches to a fast voice of the same gender when first audio would take too long", () => {
-    resetSpeeds();
-    // Measured on one core: about 1.9 s of work per second of audio.
-    recordSpeed("af_heart", 5300, 2.8);
-    assert.deepEqual(liveVoiceFor("af_heart"), { voice: FAST_VOICE.female, substituted: true });
-    assert.deepEqual(liveVoiceFor("am_michael"), { voice: FAST_VOICE.male, substituted: true });
-    // Piper medium voices are measured separately and stay.
-    recordSpeed("en_US-joe-medium", 400, 2.5);
-    assert.deepEqual(liveVoiceFor("en_US-joe-medium"), { voice: "en_US-joe-medium", substituted: false });
+  it("speaks long sentences clause by clause, at punctuation only", () => {
+    const long = "Kampala is one of the best known towns in Uganda, and many people visit it every year.";
+    assert.deepEqual(speechPieces(["Hi.", long]), [
+      { text: "Hi.", endsSentence: true },
+      { text: "Kampala is one of the best known towns in Uganda,", endsSentence: false },
+      { text: "and many people visit it every year.", endsSentence: true },
+    ]);
   });
 
-  it("keeps the chosen voice when it is fast enough", () => {
-    resetSpeeds();
-    recordSpeed("af_heart", 0.4 * LIVE_FIRST_AUDIO_LIMIT_MS, 2.5);
-    assert.deepEqual(liveVoiceFor("af_heart"), { voice: "af_heart", substituted: false });
+  it("keeps short sentences whole, and very short clauses with their neighbour", () => {
+    assert.deepEqual(speechPieces(["Hi.", "Yes, it is."]), [
+      { text: "Hi.", endsSentence: true },
+      { text: "Yes, it is.", endsSentence: true },
+    ]);
+    const s = "In the morning, after breakfast, we walked slowly to the old market by the lake.";
+    for (const p of speechPieces(["Hi.", s]).slice(1)) assert.ok(p.text.length >= 18, p.text);
+  });
+
+  it("never changes or loses a word", () => {
+    const text = [
+      "Well, that depends on what you mean by fast, and how much you care about cost; both matter.",
+      "Short.",
+      "Another long sentence, with commas, colons: and dashes – all of which are places to pause, naturally.",
+    ];
+    for (const first of [true, false]) assert.equal(words(speechPieces(text, first)), text.join(" "));
+  });
+
+  it("marks only the last piece of each sentence as ending it", () => {
+    const pieces = speechPieces(["One, two, three four five six seven eight nine ten eleven twelve thirteen.", "End."]);
+    assert.deepEqual(pieces.map((p) => p.endsSentence), [...pieces.slice(0, -2).map(() => false), true, true]);
+  });
+});
+
+describe("live greeting", () => {
+  it("greets by first name, and politely without one", () => {
+    assert.equal(greetingFor("Peter Muhwezi"), "Hello Peter, what can I do for you today?");
+    assert.equal(greetingFor(null), "Hello, what can I do for you today?");
+    assert.equal(greetingFor("  Amina "), "Hello Amina, what can I do for you today?");
+    // Anything that is not part of a name is dropped before it is spoken.
+    assert.equal(greetingFor("Ruth!"), "Hello Ruth, what can I do for you today?");
   });
 });
 
@@ -181,6 +201,7 @@ describe("the web app's copy of the sentence splitter", () => {
   it("is identical to this one", () => {
     const web = path.join(__dirname, "..", "..", "..", "astraeya-web", "src", "lib", "voice", "sentences.ts");
     if (!existsSync(web)) return; // the API checked out on its own
-    assert.equal(readFileSync(web, "utf8"), readFileSync(path.join(__dirname, "sentences.ts"), "utf8"));
+    const norm = (f: string) => readFileSync(f, "utf8").replace(/\r\n/g, "\n");
+    assert.equal(norm(web), norm(path.join(__dirname, "sentences.ts")));
   });
 });

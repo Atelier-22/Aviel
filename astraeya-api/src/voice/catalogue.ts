@@ -74,13 +74,3 @@ export function normalizeVoiceId(id: unknown): string {
 export function voiceLabel(v: VoiceInfo): string {
   return `${v.name} (${v.gender === "female" ? "Female" : "Male"}, ${v.accent})`;
 }
-
-/**
- * Quick voices for live mode, used when the chosen voice cannot start
- * speaking fast enough on this server. Measured on one CPU core: about 0.45 s
- * to first audio, against about 4 s for Kokoro.
- */
-export const FAST_VOICE: Record<VoiceGender, string> = {
-  female: "en_US-kristin-medium",
-  male: "en_US-john-medium",
-};

@@ -26,8 +26,9 @@ export const VOICE_TRANSITIONS: Record<VoiceState, VoiceState[]> = {
   // Nothing is running. Everything starts here and returns here.
   idle: ["connecting", "offline", "error"],
 
-  // Opening the microphone and waiting on permission.
-  connecting: ["listening", "error", "offline", "idle"],
+  // Opening the microphone and waiting on permission. Astraeya may already be
+  // greeting the person meanwhile, so speaking is allowed from here.
+  connecting: ["listening", "speaking", "error", "offline", "idle"],
 
   // The microphone is open and the recogniser is running.
   listening: ["processing", "paused", "idle", "error", "offline"],
@@ -35,8 +36,9 @@ export const VOICE_TRANSITIONS: Record<VoiceState, VoiceState[]> = {
   // The turn has been sent and a reply is being generated.
   processing: ["speaking", "listening", "idle", "error", "offline"],
 
-  // Reading the reply aloud.
-  speaking: ["interrupted", "listening", "idle", "paused", "error", "offline"],
+  // Reading the reply aloud. Back to connecting if the greeting finishes
+  // before the microphone is open.
+  speaking: ["interrupted", "listening", "connecting", "idle", "paused", "error", "offline"],
 
   // The user talked over the reply. A staging state, held only long enough to
   // stop the synthesiser before listening resumes.

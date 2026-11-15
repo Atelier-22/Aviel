@@ -44,6 +44,7 @@ import {
   type VoiceState,
 } from "@/lib/voice/voice-state";
 import { SentenceStream } from "@/lib/voice/sentences";
+import { readCachedGreeting } from "@/lib/voice/greeting";
 import {
   VoicePlayer,
   groupVoices,
@@ -79,7 +80,11 @@ export function LiveVoiceScreen({
   const { settings, meta, update } = useSettingsStore();
   const [voices, setVoices] = useState<AstraeyaVoice[]>([]);
   const playerRef = useRef<VoicePlayer | null>(null);
-  /** "Using a quicker voice…", or the browser-voice backup notice. */
+  /** The greeting is said once per session, not on every resume. */
+  const greetedRef = useRef(false);
+  /** Whether the microphone is open, so the greeting knows to hand over to listening. */
+  const micReadyRef = useRef(false);
+  /** A note for the person, e.g. that the browser's backup voice is reading. */
   const [voiceNotice, setVoiceNotice] = useState<string | null>(null);
 
   useEffect(() => {
@@ -284,14 +289,14 @@ export function LiveVoiceScreen({
      A player is made for each reply before it starts streaming; sentences are
      queued as they complete. The orb follows the real loudness of the audio. */
   const beginSpeech = useCallback(
-    (): VoicePlayer | null => {
-      if (!settingsRef.current.liveVoice.autoResponse || typeof window === "undefined") return null;
+    (opts: { onDone?: () => void } = {}): VoicePlayer | null => {
+      if (typeof window === "undefined") return null;
+      if (!opts.onDone && !settingsRef.current.liveVoice.autoResponse) return null;
       playerRef.current?.stop();
       const v = settingsRef.current.voice;
 
       const player: VoicePlayer = new VoicePlayer({
         voice: v.outputVoice,
-        mode: "live",
         volume: v.volume,
         rate: v.rate,
         pitch: v.pitch,
@@ -343,6 +348,10 @@ export function LiveVoiceScreen({
           if (playerRef.current !== player) return;
           playerRef.current = null;
           speechEnergyRef.current = 0;
+          if (opts.onDone) {
+            opts.onDone();
+            return;
+          }
           if (stateRef.current !== "speaking" && stateRef.current !== "processing") return;
           if (settingsRef.current.liveVoice.continuousListening) {
             setState("listening");
@@ -526,6 +535,34 @@ export function LiveVoiceScreen({
     unlockAudio();
     setError(null);
     setState("connecting");
+    micReadyRef.current = false;
+
+    // Astraeya speaks first, straight away: "Hello Peter, what can I do for
+    // you today?". The microphone opens while it talks, and listening starts
+    // only once it has finished, so it never hears its own voice.
+    if (!greetedRef.current) {
+      greetedRef.current = true;
+      const hello =
+        readCachedGreeting() ??
+        (await apiFetch<{ greeting: string }>("/voice/warm", { method: "POST" })
+          .then((r) => r?.greeting ?? null)
+          .catch(() => null));
+      if (hello) {
+        setTurns((prev) => [...prev, { id: crypto.randomUUID(), role: "assistant", text: hello }]);
+        const player = beginSpeech({
+          onDone: () => {
+            if (micReadyRef.current) {
+              setState("listening");
+              startListening();
+            } else {
+              setState("connecting");
+            }
+          },
+        });
+        player?.enqueue(hello);
+        player?.end();
+      }
+    }
 
     const engine = new AudioEngine();
     engineRef.current = engine;
@@ -590,9 +627,22 @@ export function LiveVoiceScreen({
     };
     requestAnimationFrame(pump);
 
+    // The microphone is ready. If the greeting is still playing, listening
+    // starts when it ends (see onDone above).
+    micReadyRef.current = true;
+    if (playerRef.current) return;
     setState("listening");
     startListening();
-  }, [setState, startListening]);
+  }, [setState, startListening, beginSpeech]);
+
+  /* ---- Starts as soon as the screen opens: the tap that opened it is the go-ahead ---- */
+  // A timer rather than a direct call: React's development double-mount
+  // cancels the first timer, so the session starts exactly once either way.
+  useEffect(() => {
+    const timer = setTimeout(() => void begin(), 0);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /**
    * Play a sample in the currently selected voice.

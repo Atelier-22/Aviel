@@ -110,6 +110,67 @@ export function splitSentences(markdown: string): string[] {
   return cut(speakableText(markdown), true).sentences;
 }
 
+/** A piece of speech, and whether it ends a sentence (longer pause) or a clause. */
+export interface SpeechPiece {
+  text: string;
+  endsSentence: boolean;
+}
+
+/** A clause shorter than this is kept with the next one: too short to stand alone. */
+const MIN_CLAUSE = 18;
+/** Sentences longer than this are spoken clause by clause. */
+const SPLIT_ABOVE = 70;
+
+/** Splits one sentence at commas, semicolons, colons and dashes, keeping the punctuation. */
+function clauses(sentence: string, minClause: number): string[] {
+  const parts = sentence.split(/(?<=[,;:–—])\s+/);
+  const out: string[] = [];
+  let buf = "";
+  for (const part of parts) {
+    buf = buf ? `${buf} ${part}` : part;
+    if (buf.length >= minClause) {
+      out.push(buf);
+      buf = "";
+    }
+  }
+  if (buf) {
+    // A short tail joins the clause before it rather than standing alone.
+    if (out.length && buf.length < minClause) out[out.length - 1] += ` ${buf}`;
+    else out.push(buf);
+  }
+  return out;
+}
+
+/**
+ * Sentences cut into pieces of speech, small enough that each is made by the
+ * time the one before it has finished playing, so there are no waits between
+ * them. Cuts fall only at punctuation, where a speaker pauses anyway; words
+ * are never changed or split.
+ *
+ * With `first`, the opening words up to the first comma become their own
+ * piece, so sound starts as soon as possible.
+ */
+export function speechPieces(sentences: string[], first = true): SpeechPiece[] {
+  const pieces: SpeechPiece[] = [];
+  const add = (parts: string[]) => parts.forEach((text, j) => pieces.push({ text, endsSentence: j === parts.length - 1 }));
+  sentences.forEach((sentence, i) => {
+    if (first && i === 0) {
+      // The opening words on their own, then the rest of the sentence.
+      const m = sentence.slice(6).match(/[,;:–—]\s+/);
+      if (m && m.index !== undefined) {
+        const at = 6 + m.index + 1;
+        const rest = sentence.slice(at).trim();
+        if (/[\p{L}\p{N}]/u.test(rest)) {
+          add([sentence.slice(0, at).trim(), ...(rest.length > SPLIT_ABOVE ? clauses(rest, MIN_CLAUSE) : [rest])]);
+          return;
+        }
+      }
+    }
+    add(sentence.length > SPLIT_ABOVE ? clauses(sentence, MIN_CLAUSE) : [sentence]);
+  });
+  return pieces;
+}
+
 /**
  * Sentences from a reply that is still arriving. Feed it text as it streams;
  * each call returns the sentences completed so far. Call end() at the end.

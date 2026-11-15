@@ -1,20 +1,35 @@
 import { Router } from "express";
 import { z } from "zod";
+import { eq } from "drizzle-orm";
 import { requireAuth, asyncHandler } from "../auth/middleware";
+import { db, schema } from "../db";
 import { getPlatformConfig } from "../settings/platform";
-import { DEFAULT_VOICE, FAST_VOICE, VOICES, normalizeVoiceId, voiceLabel } from "../voice/catalogue";
-import { splitSentences } from "../voice/sentences";
+import { loadSettings } from "../settings/store";
+import { DEFAULT_VOICE, VOICES, normalizeVoiceId, voiceLabel } from "../voice/catalogue";
+import { speechPieces, splitSentences } from "../voice/sentences";
 import {
   VoiceUnavailable,
-  liveVoiceFor,
+  greetingFor,
   preview,
   synthesize,
   takeVoiceAllowance,
   voiceServiceUp,
+  warm,
 } from "../voice/voice.service";
 
 export const voiceRouter = Router();
 voiceRouter.use(requireAuth);
+
+/**
+ * Pieces of speech being made at once for one request. The voice server
+ * makes them on separate cores, so while the first plays the next ones are
+ * already being made: that is what keeps the speech from pausing.
+ */
+const LOOKAHEAD = Math.max(1, Number(process.env.VOICE_PARALLEL ?? 4));
+
+/** Silence after a piece, in seconds: a breath after a sentence, less after a comma. */
+const PAUSE_AFTER_SENTENCE = 0.22;
+const PAUSE_AFTER_CLAUSE = 0.06;
 
 async function voiceAllowed(res: import("express").Response): Promise<boolean> {
   const config = await getPlatformConfig();
@@ -25,6 +40,14 @@ async function voiceAllowed(res: import("express").Response): Promise<boolean> {
   return true;
 }
 
+/** What to call the person: their preferred name, else their display name. */
+async function nameFor(userId: string, profile: { preferredName: string | null; displayName: string | null }): Promise<string | null> {
+  if (profile.preferredName?.trim()) return profile.preferredName;
+  if (profile.displayName?.trim()) return profile.displayName;
+  const user = await db.query.users.findFirst({ where: eq(schema.users.id, userId), columns: { displayName: true } });
+  return user?.displayName ?? null;
+}
+
 /** The voices to choose from, grouped by the client, and whether the server is up. */
 voiceRouter.get(
   "/voices",
@@ -32,9 +55,28 @@ voiceRouter.get(
     res.json({
       default: DEFAULT_VOICE,
       available: await voiceServiceUp(),
-      fastVoices: FAST_VOICE,
       voices: VOICES.map((v) => ({ ...v, label: voiceLabel(v) })),
     });
+  })
+);
+
+/**
+ * Makes this person's live greeting ahead of time, in their voice, so it
+ * plays the instant live mode opens. Called when the chat loads; returns at
+ * once and does the work in the background.
+ */
+voiceRouter.post(
+  "/warm",
+  asyncHandler(async (req, res) => {
+    const config = await getPlatformConfig();
+    if (!config.features.voice) {
+      res.status(204).end();
+      return;
+    }
+    const settings = await loadSettings(req.userId!);
+    const greeting = greetingFor(await nameFor(req.userId!, settings.profile));
+    res.json({ greeting });
+    void warm([greeting], settings.voice.outputVoice);
   })
 );
 
@@ -67,18 +109,22 @@ voiceRouter.get(
 const speakSchema = z.object({
   text: z.string().min(1).max(20_000),
   voice: z.string().max(120).optional(),
-  /** "live" may switch to a fast voice; "read" always uses the chosen one. */
-  mode: z.enum(["read", "live"]).default("read"),
+  /**
+   * True for the start of a reply: its opening words, up to the first comma,
+   * are made and played first. Later parts of a reply that is still
+   * streaming send false.
+   */
+  first: z.boolean().default(true),
 });
 
 /**
- * Speech for a piece of text, streamed sentence by sentence.
+ * Speech for a piece of text, streamed piece by piece in order.
  *
- * The response is a sequence of frames, one per sentence:
+ * Frames, one per piece:
  *   [4-byte length][JSON header][4-byte length][WAV bytes]
- * The header says which sentence it is and which voice spoke it. A header
- * with "error" set (and no audio after it) means the rest could not be made;
- * the client then falls back to the browser's voice for what is left.
+ * The header has the piece's text, its voice and the pause to leave after it.
+ * A header with "error" set (and no audio) means the rest could not be made;
+ * the client then speaks what is left with the browser's voice.
  */
 voiceRouter.post(
   "/speak",
@@ -100,8 +146,9 @@ voiceRouter.post(
       return;
     }
 
-    const chosen = normalizeVoiceId(parsed.data.voice);
-    const { voice, substituted } = parsed.data.mode === "live" ? liveVoiceFor(chosen) : { voice: chosen, substituted: false };
+    // The chosen voice, always: the same in chat, read-aloud and live.
+    const voice = normalizeVoiceId(parsed.data.voice);
+    const pieces = speechPieces(sentences, parsed.data.first);
 
     const abort = new AbortController();
     res.on("close", () => abort.abort());
@@ -111,33 +158,55 @@ voiceRouter.post(
       "Cache-Control": "no-store",
       "X-Accel-Buffering": "no",
       "X-Voice-Id": voice,
-      ...(substituted ? { "X-Voice-Substituted": chosen } : {}),
     });
+    res.flushHeaders();
 
     const frame = (header: Record<string, unknown>, audio?: Buffer) => {
       const head = Buffer.from(JSON.stringify(header), "utf8");
       const len = Buffer.alloc(4);
       len.writeUInt32BE(head.length);
-      const parts: Buffer[] = [len, head];
       const alen = Buffer.alloc(4);
       alen.writeUInt32BE(audio?.length ?? 0);
-      parts.push(alen);
+      const parts: Buffer[] = [len, head, alen];
       if (audio) parts.push(audio);
       res.write(Buffer.concat(parts));
     };
 
-    for (let i = 0; i < sentences.length; i++) {
+    // Start the first few at once; each time one is sent, start the next.
+    const jobs: Promise<Awaited<ReturnType<typeof synthesize>>>[] = [];
+    const started = new Set<number>();
+    const start = (i: number) => {
+      if (i >= pieces.length || started.has(i)) return;
+      started.add(i);
+      jobs[i] = synthesize(pieces[i].text, voice, abort.signal);
+      jobs[i].catch(() => undefined); // handled when its turn comes
+    };
+    for (let i = 0; i < Math.min(LOOKAHEAD, pieces.length); i++) start(i);
+
+    for (let i = 0; i < pieces.length; i++) {
       if (abort.signal.aborted) break;
+      start(i);
       try {
-        const speech = await synthesize(sentences[i], voice, abort.signal);
-        frame({ index: i, count: sentences.length, text: sentences[i], voice: speech.voice, seconds: speech.seconds, substituted }, speech.wav);
+        const speech = await jobs[i];
+        frame(
+          {
+            index: i,
+            count: pieces.length,
+            text: pieces[i].text,
+            voice: speech.voice,
+            seconds: speech.seconds,
+            pause: pieces[i].endsSentence ? PAUSE_AFTER_SENTENCE : PAUSE_AFTER_CLAUSE,
+          },
+          speech.wav
+        );
+        start(i + LOOKAHEAD);
       } catch (err) {
         if (abort.signal.aborted) break;
         frame({
           index: i,
-          count: sentences.length,
+          count: pieces.length,
           error: err instanceof VoiceUnavailable ? "unavailable" : "failed",
-          remaining: sentences.slice(i),
+          remaining: pieces.slice(i).map((p) => p.text),
         });
         break;
       }
