@@ -15,6 +15,7 @@ import {
   jsonb,
   uniqueIndex,
   index,
+  customType,
 } from "drizzle-orm/pg-core";
 import { createId } from "@paralleldrive/cuid2";
 import { relations, sql } from "drizzle-orm";
@@ -446,6 +447,112 @@ export const generatedFiles = pgTable(
   (t) => ({
     userIdx: index("generated_files_user_idx").on(t.userId),
     messageIdx: index("generated_files_message_idx").on(t.messageId),
+  })
+);
+
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType: () => "bytea",
+});
+
+/**
+ * Bytes of files Astraeya made itself (generated images, logos, videos). The
+ * provider's store only serves back files its own sandbox made, so these live
+ * here. generated_files points at them with a provider_file_id of "db:<id>".
+ */
+export const storedBlobs = pgTable("stored_blobs", {
+  id: id(),
+  mediaType: text("media_type").notNull(),
+  sizeBytes: integer("size_bytes").notNull(),
+  bytes: bytea("bytes").notNull(),
+  createdAt: createdAt(),
+});
+
+/**
+ * A link that lets anyone holding it download one made file, without an
+ * account. Only a hash of the token is kept, so a leaked database cannot be
+ * turned into working links. Private until made; revocable; expiring.
+ */
+export const shareLinks = pgTable(
+  "share_links",
+  {
+    id: id(),
+    fileId: text("file_id")
+      .notNull()
+      .references(() => generatedFiles.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    downloads: integer("downloads").notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    tokenIdx: uniqueIndex("share_links_token_idx").on(t.tokenHash),
+    fileIdx: index("share_links_file_idx").on(t.fileId),
+  })
+);
+
+/**
+ * A slow generation (video) running at the media service. The chat reply says
+ * it has started; this row is what the worker polls and what the chat shows
+ * as progress. When it finishes, its file is a generated_files row tied to
+ * the same reply.
+ */
+export const mediaJobs = pgTable(
+  "media_jobs",
+  {
+    id: id(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    conversationId: text("conversation_id").references(() => conversations.id, {
+      onDelete: "set null",
+    }),
+    messageId: text("message_id").references(() => messages.id, {
+      onDelete: "set null",
+    }),
+    kind: text("kind").notNull(), // video | slideshow
+    // queued | processing | done | failed
+    status: text("status").notNull().default("queued"),
+    model: text("model").notNull(),
+    // The media service's own request id; never sent to the client.
+    providerRequestId: text("provider_request_id"),
+    prompt: text("prompt").notNull(),
+    params: jsonb("params").$type<Record<string, unknown>>().notNull().default({}),
+    fileId: text("file_id").references(() => generatedFiles.id, { onDelete: "set null" }),
+    error: text("error"),
+    attempts: integer("attempts").notNull().default(0),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => ({
+    statusIdx: index("media_jobs_status_idx").on(t.status),
+    userIdx: index("media_jobs_user_idx").on(t.userId),
+    conversationIdx: index("media_jobs_conversation_idx").on(t.conversationId),
+  })
+);
+
+/**
+ * What each paid generation cost, per user, from the first one. In millionths
+ * of a US dollar, so cheap images do not round to zero.
+ */
+export const costEvents = pgTable(
+  "cost_events",
+  {
+    id: id(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(), // image | logo | image_edit | video | slideshow | moderation
+    model: text("model").notNull(),
+    units: integer("units").notNull().default(1),
+    costMicros: integer("cost_micros").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    userIdx: index("cost_events_user_idx").on(t.userId, t.createdAt),
   })
 );
 

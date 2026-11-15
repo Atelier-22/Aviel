@@ -2,6 +2,7 @@ import { Router } from "express";
 import { and, asc, desc, eq } from "drizzle-orm";
 import { db, schema } from "../db";
 import { filesByMessage } from "../services/files.service";
+import { jobsByMessage } from "../services/media.service";
 import { requireAuth, asyncHandler } from "../auth/middleware";
 
 export const conversationsRouter = Router();
@@ -56,12 +57,16 @@ conversationsRouter.get(
     // Made files under the replies they came with, each with a fresh link.
     // The sandbox id is the server's business only.
     const files = await filesByMessage(req.userId!, conversation.id);
+    // Videos still being made (or that failed) under the reply that started them.
+    const jobs = await jobsByMessage(req.userId!, conversation.id);
     const { sandboxId: _sandbox, ...rest } = conversation;
     res.json({
       ...rest,
-      messages: rest.messages.map((m) =>
-        files[m.id] ? { ...m, files: files[m.id] } : m
-      ),
+      messages: rest.messages.map((m) => ({
+        ...m,
+        ...(files[m.id] ? { files: files[m.id] } : {}),
+        ...(jobs[m.id] ? { jobs: jobs[m.id] } : {}),
+      })),
     });
   })
 );

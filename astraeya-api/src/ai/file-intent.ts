@@ -81,3 +81,15 @@ export function wantsFileEdit(message: string): boolean {
     text
   );
 }
+
+/**
+ * A request for a picture or a video rather than a document: "a slideshow
+ * video with 3 slides", "a poster for my friend", "a logo". Those go to the
+ * image and video tools, not the code sandbox, unless a document format is
+ * named ("a poster as a PDF").
+ */
+export function wantsMediaNotDocument(message: string): boolean {
+  const media = /\b(video|slideshow|clip|animation|animate|image|picture|photo|poster|flyer|logo|icon|illustration|artwork|drawing)\b/i;
+  const documentFormat = /\b(pdf|word|docx?|power ?point|pptx?|excel|xlsx|spreadsheet|csv|zip|html|website|code)\b/i;
+  return media.test(message) && !documentFormat.test(message);
+}

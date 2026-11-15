@@ -26,6 +26,16 @@ const envSchema = z.object({
   DEEPSEEK_API_KEY: z.string().optional(),
   DEEPSEEK_BASE_URL: z.string().default("https://api.deepseek.com"),
 
+  // Image and video generation (fal.ai). Absent means the tools are not
+  // offered, and the assistant says plainly that it cannot make pictures or
+  // video here. FAL_BASE_URL is only changed for tests, to point at a stub.
+  FAL_KEY: z.string().optional(),
+  FAL_QUEUE_URL: z.string().default("https://queue.fal.run"),
+  // Where this API is reachable from the internet, for the media service's
+  // "your video is ready" webhook. Without it, finished videos are found by
+  // polling, which works the same, just up to a few seconds later.
+  PUBLIC_API_URL: z.string().optional(),
+
   // Comma-separated list of browser origins allowed to call this API.
   // Native mobile clients send no Origin header and are always allowed.
   CORS_ORIGINS: z.string().default("http://localhost:3000"),

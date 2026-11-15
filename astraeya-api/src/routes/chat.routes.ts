@@ -15,6 +15,7 @@ import {
 } from "../services/chat.service";
 import {
   FILE_MAKING_NOTE,
+  MEDIA_TOOLS_NOTE,
   VECTOR_ART_NOTE,
   memoryPromptBlock,
   recallPromptBlock,
@@ -23,7 +24,7 @@ import { extractDocument, formatDocuments } from "../services/documents.service"
 import { getProvider, providerForModel, resolveModelId } from "../ai";
 import type { ChatImage, ChatMessage, StreamChunk } from "../ai";
 import type { AIProvider, FileMaking, GenerationOptions } from "../ai/provider.interface";
-import { wantsFileEdit, wantsFileOutput, wantsVectorArt } from "../ai/file-intent";
+import { wantsFileEdit, wantsFileOutput, wantsMediaNotDocument, wantsVectorArt } from "../ai/file-intent";
 import { VIDEO_TYPES } from "../services/documents.service";
 import {
   attachFilesToMessage,
@@ -43,6 +44,9 @@ import {
   trackContextInBackground,
 } from "../services/session.service";
 import { checkLimit } from "../services/limits.service";
+import { buildMediaTools } from "../services/media-tools";
+import { attachJobsToMessage, findOwnedJob, jobForClient, type JobForClient } from "../services/media.service";
+import { mediaServiceConfigured } from "../ai/media/fal";
 import type { UserSettings } from "../settings/schema";
 
 export const chatRouter = Router();
@@ -463,12 +467,16 @@ chatRouter.post(
     // code in an isolated sandbox. It is slower and dearer than a reply, so it
     // is opened only for a message that asks for a file — or that changes a
     // file the previous reply made.
+    // Pictures and videos go to the media tools instead, when they exist.
+    const mediaRequest =
+      config.features.imageGeneration && provider.id === "anthropic" && wantsMediaNotDocument(message);
     const fileRequest =
-      wantsFileOutput({
+      !mediaRequest &&
+      (wantsFileOutput({
         message,
         attachmentTypes: attachments.map((a) => a.mediaType),
       }) ||
-      (wantsFileEdit(message) && (await lastReplyMadeFile(conversation.id)));
+      (wantsFileEdit(message) && (await lastReplyMadeFile(conversation.id))));
     const sandboxAvailable =
       config.features.fileCreation &&
       providerUsable &&
@@ -503,6 +511,26 @@ chatRouter.post(
         }. Say so in one sentence, then give the full content in the chat, well formatted, so they can copy it. The reply has a download button for Word and Markdown.`
       );
     }
+
+    // ---- Image and video tools ----------------------------------------------
+    // Offered on every turn where they can work, so the tool list (part of the
+    // cached prefix) stays the same from one message to the next.
+    const mediaToolsAvailable =
+      providerUsable &&
+      provider.id === "anthropic" &&
+      !settings.privacy.localOnly &&
+      config.features.imageGeneration;
+    const mediaGeneration = mediaToolsAvailable && mediaServiceConfigured();
+    const mediaTools = mediaToolsAvailable
+      ? buildMediaTools(
+          { userId, conversationId: conversation.id, attachments },
+          {
+            generation: mediaGeneration,
+            slideshow: true,
+            maxVideoSeconds: config.limits.maxVideoSeconds,
+          }
+        )
+      : [];
 
     // ---- Turn-specific prompt notes ---------------------------------------
     const wantsSearch = settings.ai.webSearch && config.features.webSearch;
@@ -572,7 +600,18 @@ chatRouter.post(
     }
 
     notes.push(...fileNotes);
-    if (!fileMaking && wantsVectorArt(message)) notes.push(VECTOR_ART_NOTE);
+    if (mediaTools.length) {
+      notes.push(
+        MEDIA_TOOLS_NOTE({ generation: mediaGeneration, maxVideoSeconds: config.limits.maxVideoSeconds })
+      );
+    } else if (/(image|picture|photo|poster|video|clip|animation|logo)/i.test(message)) {
+      notes.push(
+        `
+
+You cannot make images or videos on this model or server. If the user asks for one, say so plainly in one sentence and offer what you can do instead. Never claim to have made a file.`
+      );
+    }
+    if (!fileMaking && !mediaGeneration && wantsVectorArt(message)) notes.push(VECTOR_ART_NOTE);
 
     if (session) notes.push(sessionPromptBlock(session));
 
@@ -620,6 +659,7 @@ chatRouter.post(
       // Balanced and Fast answer straight away; Deep thinks hard first.
       effort: (think.mode === "deep" ? "high" : "low") as GenerationOptions["effort"],
       ...(fileMaking ? { fileMaking } : {}),
+      ...(mediaTools.length ? { tools: mediaTools } : {}),
       // The think mode can only narrow the account's ceiling, never widen it
       // past what the platform allows.
       maxTokens: Math.min(
@@ -682,10 +722,21 @@ chatRouter.post(
       // the label imply otherwise.
       nativeReasoning: think.nativeReasoning,
       makingFiles: Boolean(fileMaking),
+      mediaTools: mediaTools.map((t) => t.name),
     };
 
     /** Files made this turn, recorded as they arrive. */
     const madeFiles: FileForClient[] = [];
+    /** Slow jobs (videos) started this turn. */
+    const startedJobs: JobForClient[] = [];
+    const handleJobChunk = async (chunk: StreamChunk): Promise<JobForClient | null> => {
+      if (chunk.type !== "job" || !chunk.jobId) return null;
+      const row = await findOwnedJob(chunk.jobId, userId);
+      if (!row) return null;
+      const job = await jobForClient(row);
+      startedJobs.push(job);
+      return job;
+    };
     const handleFileChunk = async (chunk: StreamChunk): Promise<FileForClient | null> => {
       if (chunk.type === "file" && chunk.file) {
         const row = await recordMadeFile({ userId, conversationId: conversation.id, file: chunk.file });
@@ -704,10 +755,17 @@ chatRouter.post(
 
     /** Saves the reply and ties this turn's files to it. */
     const saveReply = async (fullText: string) => {
-      const text = fullText.trim() ? fullText : madeFiles.length ? FILES_ONLY_REPLY : "";
+      const text = fullText.trim()
+        ? fullText
+        : madeFiles.length
+          ? FILES_ONLY_REPLY
+          : startedJobs.length
+            ? "Your video is being made. It will appear here when it is ready."
+            : "";
       if (!text) return null;
       const saved = await saveMessage(conversation.id, "assistant", text);
       await attachFilesToMessage(madeFiles.map((f) => f.id), saved.id);
+      await attachJobsToMessage(startedJobs.map((j) => j.id), saved.id);
       return saved;
     };
 
@@ -756,6 +814,9 @@ chatRouter.post(
           } else if (chunk.type === "file" || chunk.type === "container") {
             const made = await handleFileChunk(chunk);
             if (made) send("file", { file: made });
+          } else if (chunk.type === "job") {
+            const job = await handleJobChunk(chunk);
+            if (job) send("job", { job });
           } else if (chunk.type === "sources") {
             send("sources", { sources: chunk.sources });
           } else if (chunk.type === "error") {
@@ -769,7 +830,7 @@ chatRouter.post(
           // Only a turn that produced nothing is worth retrying. Half an answer
           // plus a different model finishing it would read as one reply that
           // changes voice mid-sentence.
-          const retry = fullText.trim() || madeFiles.length
+          const retry = fullText.trim() || madeFiles.length || startedJobs.length
             ? null
             : await fallbackModelReply(
                 history,
@@ -832,6 +893,7 @@ chatRouter.post(
     } else {
       for await (const chunk of streamWithSandboxRetry(provider, history, generation)) {
         if (chunk.type === "file" || chunk.type === "container") await handleFileChunk(chunk);
+        else if (chunk.type === "job") await handleJobChunk(chunk);
         else if (chunk.type === "text" && chunk.text) fullText += chunk.text;
         else if (chunk.type === "sources" && chunk.sources)
           collectedSources.push(...chunk.sources);
@@ -840,7 +902,7 @@ chatRouter.post(
       }
     }
 
-    if (streamError && !fullText && madeFiles.length === 0) {
+    if (streamError && !fullText && madeFiles.length === 0 && startedJobs.length === 0) {
       const retry = await fallbackModelReply(
         history,
         systemPrompt,
@@ -869,6 +931,7 @@ chatRouter.post(
 
     res.json({
       ...(madeFiles.length ? { files: madeFiles } : {}),
+      ...(startedJobs.length ? { jobs: startedJobs } : {}),
       ...meta,
       userMessageId: savedUserMessage.id,
       assistantMessageId: savedReply?.id ?? null,

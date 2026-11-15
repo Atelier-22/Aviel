@@ -42,10 +42,9 @@ export const platformConfigSchema = z.object({
     voice: true,
     liveVoice: true,
     imageAnalysis: true,
-    // No image-generation provider is implemented. The flag exists so enabling
-    // it is a config change once one is, but it starts off and the route
-    // refuses regardless of what a client sends.
-    imageGeneration: false,
+    // Images, logos and video through the media service. Only offered when
+    // FAL_KEY is set as well.
+    imageGeneration: true,
     fileUploads: true,
     memory: true,
     projects: true,
@@ -61,7 +60,17 @@ export const platformConfigSchema = z.object({
     .object({
       /** 0 means no ceiling. */
       messagesPerDay: z.number().int().min(0).default(0),
-      imageGenerationsPerDay: z.number().int().min(0).default(0),
+      // Paid per use at the media service, so these have real defaults.
+      imageGenerationsPerDay: z.number().int().min(0).default(20),
+      videoGenerationsPerDay: z.number().int().min(0).default(2),
+      // The longest AI video one request may ask for, in seconds. 3–15.
+      maxVideoSeconds: z.number().int().min(3).max(15).default(5),
+      // At most this many videos rendering at once for the whole platform;
+      // the rest wait their turn.
+      maxConcurrentVideos: z.number().int().min(1).max(50).default(3),
+      // Spend ceiling per user per day across images and video, in US cents.
+      // 0 means no ceiling.
+      dailySpendCentsPerUser: z.number().int().min(0).default(300),
       // Each file request runs code in a sandbox, which costs more than a
       // reply. 0 means no limit.
       filesPerDay: z.number().int().min(0).default(30),

@@ -165,12 +165,12 @@ export async function readPdfVisually(base64: string): Promise<string> {
 // Video
 // ---------------------------------------------------------------------------
 
-function ffmpegPath(): string {
+export function ffmpegPath(): string {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   return (require("@ffmpeg-installer/ffmpeg") as { path: string }).path;
 }
 
-function run(cmd: string, args: string[]): Promise<{ code: number; stderr: string }> {
+export function run(cmd: string, args: string[]): Promise<{ code: number; stderr: string }> {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, { windowsHide: true });
     let stderr = "";

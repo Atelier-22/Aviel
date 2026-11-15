@@ -19,7 +19,9 @@ import { adminRouter } from "./routes/admin.routes";
 import { localAiRouter } from "./routes/local-ai.routes";
 import { sessionsRouter } from "./routes/sessions.routes";
 import { systemRouter } from "./routes/system.routes";
-import { filesRouter } from "./routes/files.routes";
+import { filesRouter, shareRouter } from "./routes/files.routes";
+import { mediaRouter } from "./routes/media.routes";
+import { startMediaWorker } from "./services/media.service";
 import {
   libraryRouter,
   usageRouter,
@@ -82,6 +84,8 @@ app.use("/local-ai", localAiRouter);
 app.use("/sessions", sessionsRouter);
 app.use("/system", systemRouter);
 app.use("/files", filesRouter);
+app.use("/share", shareRouter);
+app.use("/media", mediaRouter);
 app.use("/library", libraryRouter);
 app.use("/usage", usageRouter);
 app.use("/feedback", feedbackRouter);
@@ -157,6 +161,10 @@ async function start() {
   // Conversation and file retention settings are only real if something acts on
   // them. This is that something.
   startRetentionSweeper();
+
+  // Videos are made in the background; this moves them along and delivers
+  // them, including any left running when the server last stopped.
+  startMediaWorker();
 
   const server = app.listen(env.PORT, () => {
     console.log(`Astraeya API listening on port ${env.PORT}`);

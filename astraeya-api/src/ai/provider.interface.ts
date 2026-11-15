@@ -45,6 +45,26 @@ export interface GenerationOptions {
   turnNotes?: string;
   /** Make files this turn (documents, slides, sheets, charts, edited images). */
   fileMaking?: FileMaking;
+  /**
+   * Tools that run on this server (image and video generation). Providers
+   * without tool calling ignore them, and the chat route says so in the prompt.
+   */
+  tools?: ClientTool[];
+}
+
+/** A tool the model may call, run here rather than at the provider. */
+export interface ClientTool {
+  name: string;
+  description: string;
+  /** JSON Schema for the tool's input. */
+  inputSchema: Record<string, unknown>;
+  /** Shown to the user while it runs, e.g. "Making your image…". */
+  status: string;
+  /** Never throws; a failure is a result with isError set. */
+  run(
+    input: Record<string, unknown>,
+    emit: (chunk: StreamChunk) => void
+  ): Promise<{ content: string; isError?: boolean }>;
 }
 
 export interface WebSource {
@@ -61,7 +81,9 @@ export interface MadeFile {
 }
 
 export interface StreamChunk {
-  type: "text" | "done" | "error" | "searching" | "sources" | "status" | "file" | "container";
+  type: "text" | "done" | "error" | "searching" | "sources" | "status" | "file" | "container" | "job";
+  /** Present on "job": a slow generation (video) that has started. */
+  jobId?: string;
   text?: string;
   error?: string;
   /** Present on "sources": the pages the model actually consulted. */

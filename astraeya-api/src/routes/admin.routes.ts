@@ -494,3 +494,46 @@ adminRouter.patch(
     res.json(updated);
   })
 );
+
+/**
+ * What image and video generation has cost, per user and in total, today and
+ * over 30 days. In US dollars, from the cost ledger.
+ */
+adminRouter.get(
+  "/costs",
+  asyncHandler(async (_req, res) => {
+    const today = startOfToday();
+    const month = daysAgo(30);
+    const micros = sql<number>`coalesce(sum(${schema.costEvents.costMicros}), 0)::bigint`;
+    const todayMicros = sql<number>`coalesce(sum(${schema.costEvents.costMicros}) filter (where ${schema.costEvents.createdAt} >= ${today}), 0)::bigint`;
+
+    const byUser = await db
+      .select({
+        userId: schema.costEvents.userId,
+        email: schema.users.email,
+        month: micros,
+        today: todayMicros,
+        generations: sql<number>`count(*)::int`,
+      })
+      .from(schema.costEvents)
+      .innerJoin(schema.users, eq(schema.users.id, schema.costEvents.userId))
+      .where(gte(schema.costEvents.createdAt, month))
+      .groupBy(schema.costEvents.userId, schema.users.email)
+      .orderBy(desc(micros))
+      .limit(100);
+
+    const byKind = await db
+      .select({ kind: schema.costEvents.kind, month: micros, today: todayMicros, generations: sql<number>`count(*)::int` })
+      .from(schema.costEvents)
+      .where(gte(schema.costEvents.createdAt, month))
+      .groupBy(schema.costEvents.kind);
+
+    const dollars = (m: number | string) => Math.round(Number(m) / 100) / 10_000;
+    res.json({
+      byUser: byUser.map((u) => ({ ...u, month: dollars(u.month), today: dollars(u.today) })),
+      byKind: byKind.map((k) => ({ ...k, month: dollars(k.month), today: dollars(k.today) })),
+      totalMonth: dollars(byKind.reduce((s, k) => s + Number(k.month), 0)),
+      totalToday: dollars(byKind.reduce((s, k) => s + Number(k.today), 0)),
+    });
+  })
+);

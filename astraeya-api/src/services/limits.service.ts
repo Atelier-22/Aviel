@@ -10,7 +10,7 @@ import { and, eq, gte, sql } from "drizzle-orm";
 import { db, schema } from "../db";
 import { getPlatformConfig, type PlatformConfig } from "../settings/platform";
 
-export type UsageType = "message" | "image" | "voice" | "tool_call" | "token" | "file";
+export type UsageType = "message" | "image" | "video" | "voice" | "tool_call" | "token" | "file";
 
 export interface LimitState {
   type: UsageType;
@@ -51,6 +51,7 @@ export async function usageToday(
 const LIMIT_FOR: Record<string, keyof PlatformConfig["limits"]> = {
   message: "messagesPerDay",
   image: "imageGenerationsPerDay",
+  video: "videoGenerationsPerDay",
   voice: "voiceMinutesPerDay",
   file: "filesPerDay",
 };
@@ -101,7 +102,9 @@ export async function checkLimit(
       ? "messages"
       : type === "image"
         ? "image generations"
-        : type === "file"
+        : type === "video"
+          ? "video generations"
+          : type === "file"
           ? "file creations"
           : "voice minutes";
 

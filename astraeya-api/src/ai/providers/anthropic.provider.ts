@@ -227,6 +227,18 @@ export class AnthropicProvider implements AIProvider {
           ? [{ type: "code_execution_20260521" as const, name: "code_execution" as const }]
           : []),
       ];
+      // Tools that run on this server: image and video generation. Declared
+      // through a plain shape; the SDK's tool union is too large for the type
+      // checker to expand here.
+      const clientTools = options?.tools ?? [];
+      for (const tool of clientTools) {
+        tools.push({
+          name: tool.name,
+          description: tool.description,
+          input_schema: tool.inputSchema,
+        } as unknown as Anthropic.Beta.BetaToolUnion);
+      }
+      const clientToolByName = new Map(clientTools.map((t) => [t.name, t]));
 
       const model = options?.model ?? env.ANTHROPIC_MODEL;
 
@@ -258,7 +270,7 @@ export class AnthropicProvider implements AIProvider {
 
       // A long job (building a 15-slide deck) can pause partway; the API then
       // resumes it when the paused turn is sent back. A few rounds at most.
-      for (let round = 0; round < 6; round++) {
+      for (let round = 0; round < 10; round++) {
         // `temperature` is deliberately not sent: it is rejected with a 400 on
         // the current model families. Thinking is left adaptive (the default);
         // `effort` sets how much of it a reply gets.
@@ -306,6 +318,12 @@ export class AnthropicProvider implements AIProvider {
               announcedWork = true;
               yield { type: "status", status: "Creating your file…" };
             }
+          } else if (
+            event.type === "content_block_start" &&
+            event.content_block.type === "tool_use"
+          ) {
+            const tool = clientToolByName.get(event.content_block.name);
+            if (tool) yield { type: "status", status: tool.status };
           }
         }
 
@@ -338,27 +356,47 @@ export class AnthropicProvider implements AIProvider {
           }
         }
 
-        // No client tools are declared, but the model occasionally calls one
-        // that sounds right ("view", to look at a file) mid-way through
-        // making something. Left alone, the turn ends there with nothing
-        // made. Answering the call with an error that points back to the
-        // sandbox lets it carry on. Bounded by the round limit.
+        // Tool calls: ours are run; anything else (the model sometimes calls
+        // a tool that sounds right, like "view") gets an error that points it
+        // back to what exists, so the turn does not end with nothing made.
+        // Bounded by the round limit.
         // Read through a plain shape: narrowing the SDK's block union here
         // sends the type checker out of memory.
-        const blocks = final.content as unknown as { type: string; id?: string; name?: string }[];
-        const strayCalls = blocks.filter((b) => b.type === "tool_use" && b.id) as {
+        const blocks = final.content as unknown as { type: string; id?: string; name?: string; input?: unknown }[];
+        const calls = blocks.filter((b) => b.type === "tool_use" && b.id) as {
           id: string;
           name?: string;
+          input?: unknown;
         }[];
-        if (final.stop_reason === "tool_use" && strayCalls.length > 0) {
-          const results = strayCalls.map((call) => ({
-            type: "tool_result" as const,
-            tool_use_id: call.id,
-            is_error: true,
-            content: making
-              ? `There is no "${call.name}" tool. Use code_execution (bash and the file editor inside it) to look at files, run code and save the finished files.`
-              : `There is no "${call.name}" tool. Answer without it.`,
-          }));
+        if (final.stop_reason === "tool_use" && calls.length > 0) {
+          const results: { type: "tool_result"; tool_use_id: string; is_error?: boolean; content: string }[] = [];
+          for (const call of calls) {
+            const tool = call.name ? clientToolByName.get(call.name) : undefined;
+            if (tool) {
+              // Our own tools: run here, and pass on what they made as it is made.
+              const emitted: StreamChunk[] = [];
+              const input = call.input && typeof call.input === "object" ? (call.input as Record<string, unknown>) : {};
+              const outcome = await tool.run(input, (chunk) => emitted.push(chunk));
+              for (const chunk of emitted) yield chunk;
+              results.push({
+                type: "tool_result",
+                tool_use_id: call.id,
+                ...(outcome.isError ? { is_error: true } : {}),
+                content: outcome.content,
+              });
+              continue;
+            }
+            // The model occasionally calls a tool that sounds right but does
+            // not exist. Pointing it back lets the turn carry on.
+            results.push({
+              type: "tool_result",
+              tool_use_id: call.id,
+              is_error: true,
+              content: making
+                ? `There is no "${call.name}" tool. Use code_execution (bash and the file editor inside it) to look at files, run code and save the finished files.`
+                : `There is no "${call.name}" tool. Answer without it.`,
+            });
+          }
           requestMessages.push(
             { role: "assistant", content: final.content as unknown as Anthropic.Beta.BetaContentBlockParam[] },
             { role: "user", content: results as unknown as Anthropic.Beta.BetaContentBlockParam[] }

@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { wantsFileEdit, wantsFileOutput, wantsVectorArt } from "./file-intent";
+import { wantsFileEdit, wantsFileOutput, wantsMediaNotDocument, wantsVectorArt } from "./file-intent";
 
 const ask = (message: string, attachmentTypes: string[] = []) =>
   wantsFileOutput({ message, attachmentTypes });
@@ -66,4 +66,13 @@ describe("wantsFileEdit", () => {
     assert.equal(wantsFileEdit("thanks, that's perfect"), false);
     assert.equal(wantsFileEdit("What is photosynthesis?"), false);
   });
+});
+
+it("media requests are not document requests unless a format is named", () => {
+  assert.equal(wantsMediaNotDocument("Make a short slideshow video for my friend Sarah's birthday, 3 slides"), true);
+  assert.equal(wantsMediaNotDocument("Make a poster for my friend's party"), true);
+  assert.equal(wantsMediaNotDocument("Make a logo for my company"), true);
+  assert.equal(wantsMediaNotDocument("Make a poster as a PDF"), false);
+  assert.equal(wantsMediaNotDocument("Make me a PowerPoint with 10 slides"), false);
+  assert.equal(wantsMediaNotDocument("Turn my cover letter into a PDF"), false);
 });

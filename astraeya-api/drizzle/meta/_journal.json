@@ -92,6 +92,20 @@
       "when": 1794769846578,
       "tag": "0012_generated_file_links",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1794774671870,
+      "tag": "0013_media_generation",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1794775387715,
+      "tag": "0014_stored_blobs",
+      "breakpoints": true
     }
   ]
 }
