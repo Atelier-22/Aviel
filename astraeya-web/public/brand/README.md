@@ -1,26 +1,30 @@
 # Brand assets
 
-The lockup is **the mark as artwork, with the words set as type beneath it**.
-See `src/components/logo.tsx`.
+The logo is drawn as **inline SVG** by `src/components/logo.tsx`, using the path
+data in `src/components/logo-paths.ts`. That file is generated from
+`source/astraeya-adaptive-*.svg`. The neutral parts of the logo use
+`currentColor` (`--text-primary`), so they follow the app's light and dark theme.
+The blue parts use the fixed brand colour `--brand` (`#1E6BFF`), not the accent
+preference.
 
-The mark stays a PNG because it is artwork and carries its own colour. The
-"Astraeya" wordmark and the `Think · Decide · Grow` strapline are type, which is
-what removed the old light/dark lockup pair — type follows the theme on its
-own, stays crisp at any size, and needs no re-export when the strapline changes.
+## Source artwork (`source/`)
 
-| File | Used by | Notes |
+| File | Use |
+| --- | --- |
+| `astraeya-adaptive-with-name-horizontal.svg` | Main logo: navbar, sidebar, login, register, footer |
+| `astraeya-adaptive-icon-only.svg` | The mark alone, where only a square fits |
+| `astraeya-adaptive-with-name-stacked.svg` | Spare, not currently used on the web |
+| `astraeya-dark-astraeya-*.svg` | White and blue on black: app icons, favicons, mobile splash |
+
+## Generated files
+
+| File | Used by | Made from |
 | --- | --- | --- |
-| `astraeya-logo-color.png` | Every lockup, the collapsed sidebar, avatars | Icon only, square, transparent. 512×512 or larger |
-| `astraeya-logo-dark.png` | Spare, for a light surface that needs a flat mark | Not currently referenced |
-| `astraeya-logo-white.png` | Spare, for a dark surface that needs a flat mark | Not currently referenced |
-| `favicon.ico` | Browser tab | Multi-size ico (16/32/48) |
-| `apple-touch-icon.png` | iOS home screen | 180×180, no transparency — iOS composites on black |
-| `icon-192.png` | Web app manifest | 192×192 |
-| `icon-512.png` | Web app manifest, install prompt | 512×512 |
-
-The two old `*-lockup-*.png` files are gone. They had the previous wordmark
-baked into the pixels, so they could not survive the rename — and the lockup no
-longer needs an image, because the words are type now.
+| `icon.svg` | Browser tab (modern browsers) | Adaptive icon; follows the OS colour scheme |
+| `favicon.ico` | Browser tab fallback | Dark icon on black, 16/32/48 |
+| `apple-touch-icon.png` | iOS home screen | Dark icon on black, 180×180 |
+| `icon-192.png`, `icon-512.png` | Web app manifest | Dark icon on black |
+| `icon-maskable-512.png` | Manifest, Android adaptive shapes | Dark icon on black, extra padding for the safe zone |
 
 `favicon.ico` and `apple-touch-icon.png` are **also served from the site root**,
 because browsers request `/favicon.ico` unconditionally and iOS requests
@@ -29,13 +33,9 @@ copies in `public/` and `public/brand/` must match.
 
 ## Components
 
-- `AstraeyaLockup` — mark, then "Astraeya", then the strapline. Stacked and centred.
-  `height` sizes the mark and the type scales from it, so one number sets the
-  whole thing. The strapline drops out below ~22px word size rather than
-  rendering as a grey smear.
-- `AstraeyaLockupInline` — mark beside the word, for a header row.
-- `AstraeyaIcon` — the mark alone, where only a square fits.
-
-If the artwork ever fails to load, a drawn fallback appears rather than a blank
-space. It follows the accent colour, because at that point it is interface
-chrome standing in for the brand rather than the brand itself.
+- `AstraeyaLockupInline` — the horizontal logo. `height` sets the whole lockup.
+- `AstraeyaLockup` — the horizontal logo with the `Think · Decide · Grow`
+  strapline beneath. The strapline drops out below 36px.
+- `AstraeyaIcon` — the mark alone.
+- `AstraeyaWordmark` — the name as text: "Astra" in the text colour, "eya" in
+  brand blue. For places the name appears as type rather than as the logo.

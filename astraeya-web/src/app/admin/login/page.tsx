@@ -69,7 +69,7 @@ export default function AdminLoginPage() {
     <div className="flex min-h-dvh items-center justify-center bg-[var(--bg-primary)] px-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center gap-2 text-center">
-          <AstraeyaIcon size={48} priority />
+          <AstraeyaIcon size={48} />
           <h1 className="text-xl font-semibold">Astraeya Admin</h1>
           <p className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
             <ShieldCheck size={12} />

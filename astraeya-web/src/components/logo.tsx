@@ -1,23 +1,39 @@
-"use client";
-
-/* eslint-disable @next/next/no-img-element */
-
-// Astraeya — the mark and the wordmark.
+// Astraeya — the mark, the logo and the wordmark.
 //
-// The mark is artwork and stays artwork: one PNG, carrying its own colour, not
-// recoloured by the accent preference. A logo that changes colour with a theme
-// setting stops reading as a logo.
-//
-// The wordmark beneath it is type rather than a second image. That is what
-// removes the old light/dark lockup pair: the word and the strapline follow the
-// theme on their own, stay crisp at any size, and never need re-exporting when
-// the strapline changes.
+// The logo is inline SVG drawn from logo-paths.ts, which is generated from the
+// astraeya-adaptive-*.svg artwork. The neutral parts use currentColor, set to
+// --text-primary, so they follow the app's light and dark theme. The blue parts
+// use the fixed --brand colour, never the accent preference: a logo that
+// changes colour with a setting stops reading as a logo.
 
-import { useState } from "react";
-
-const ICON_SRC = "/brand/astraeya-logo-color.png";
+import {
+  HORIZONTAL_ICON_TRANSFORM,
+  HORIZONTAL_VIEWBOX,
+  HORIZONTAL_WORD_PATHS,
+  ICON_PATHS,
+  ICON_TRANSFORM,
+  ICON_VIEWBOX,
+  type LogoPath,
+} from "./logo-paths";
 
 const TAGLINE = "Think · Decide · Grow";
+
+const HORIZONTAL_RATIO = 977 / 300;
+
+function Paths({ paths }: { paths: LogoPath[] }) {
+  return (
+    <>
+      {paths.map((p, i) => (
+        <path
+          key={i}
+          d={p.d}
+          fillRule={p.evenodd ? "evenodd" : undefined}
+          style={{ fill: p.tone === "brand" ? "var(--brand, #1e6bff)" : "currentColor" }}
+        />
+      ))}
+    </>
+  );
+}
 
 /**
  * The name as type: "Astra" in the surrounding text colour, "eya" in the fixed
@@ -34,79 +50,72 @@ export function AstraeyaWordmark({ className = "" }: { className?: string }) {
   );
 }
 
-/**
- * Drawn stand-in, used only if the artwork fails to load.
- *
- * Deliberately visible rather than blank: an invisible fallback makes a missing
- * file look like a broken layout, which is harder to diagnose than an obviously
- * placeholder mark. It follows the accent because it is interface chrome, not
- * the brand.
- */
-function FallbackMark({ size, className = "" }: { size: number; className?: string }) {
+/** The mark on its own, for places only a square fits. */
+export function AstraeyaIcon({
+  size = 32,
+  className = "",
+}: {
+  size?: number;
+  className?: string;
+}) {
   return (
-    <span
+    <svg
+      viewBox={ICON_VIEWBOX}
+      width={size}
+      height={size}
       role="img"
       aria-label="Astraeya"
-      className={`inline-flex shrink-0 select-none items-center justify-center rounded-full ${className}`}
-      style={{
-        width: size,
-        height: size,
-        backgroundImage:
-          "linear-gradient(to bottom right, var(--accent-from), var(--accent-to))",
-        color: "#fff",
-        fontFamily: "var(--font-serif)",
-        fontSize: size * 0.55,
-        // A serif capital sits high in its em box, so it needs nudging down to
-        // look centred rather than merely be centred.
-        paddingTop: size * 0.04,
-        lineHeight: 1,
-        fontWeight: 500,
-      }}
+      className={`shrink-0 ${className}`}
+      style={{ color: "var(--text-primary)" }}
     >
-      A
+      <g transform={ICON_TRANSFORM}>
+        <Paths paths={ICON_PATHS} />
+      </g>
+    </svg>
+  );
+}
+
+/** Mark and name side by side: the main logo. `height` sets the whole lockup. */
+export function AstraeyaLockupInline({
+  height = 28,
+  className = "",
+  showTagline = false,
+}: {
+  height?: number;
+  className?: string;
+  showTagline?: boolean;
+}) {
+  const logo = (
+    <svg
+      viewBox={HORIZONTAL_VIEWBOX}
+      width={Math.round(height * HORIZONTAL_RATIO)}
+      height={height}
+      role="img"
+      aria-label="Astraeya"
+      className={showTagline ? "shrink-0" : `shrink-0 ${className}`}
+      style={{ color: "var(--text-primary)" }}
+    >
+      <g transform={HORIZONTAL_ICON_TRANSFORM}>
+        <Paths paths={ICON_PATHS} />
+      </g>
+      <Paths paths={HORIZONTAL_WORD_PATHS} />
+    </svg>
+  );
+
+  if (!showTagline) return logo;
+
+  return (
+    <span className={`inline-flex flex-col items-start leading-none ${className}`}>
+      {logo}
+      <Tagline size={Math.max(7, Math.round(height * 0.22))} marginTop={height * 0.16} />
     </span>
   );
 }
 
 /**
- * The Astraeya mark on its own — no wordmark.
- *
- * Width and height are both set so the browser reserves the space before the
- * image loads, rather than reflowing the page around it.
- */
-export function AstraeyaIcon({
-  size = 32,
-  className = "",
-  priority = false,
-}: {
-  size?: number;
-  className?: string;
-  priority?: boolean;
-}) {
-  const [failed, setFailed] = useState(false);
-
-  if (failed) return <FallbackMark size={size} className={className} />;
-
-  return (
-    <img
-      src={ICON_SRC}
-      alt="Astraeya"
-      width={size}
-      height={size}
-      onError={() => setFailed(true)}
-      loading={priority ? "eager" : "lazy"}
-      className={`shrink-0 object-contain ${className}`}
-      style={{ width: size, height: size }}
-    />
-  );
-}
-
-/**
- * The full lockup: the mark, then "Astraeya", then the strapline.
- *
- * `height` sizes the mark, and the type scales from it, so a call site sets one
- * number and the proportions hold. Below about 22px the strapline stops being
- * readable and is dropped rather than rendered as a grey smear.
+ * The logo with the strapline beneath, for the login, register and empty chat
+ * screens. Below about 36px the strapline stops being readable and is dropped
+ * rather than rendered as a grey smear.
  */
 export function AstraeyaLockup({
   height = 64,
@@ -114,20 +123,14 @@ export function AstraeyaLockup({
   className = "",
   showTagline = true,
   align = "center",
-  priority = false,
 }: {
-  /** Size of the mark. The wordmark and strapline scale from it. */
   height?: number;
   width?: number;
   className?: string;
-  /** Off in tight places — a sidebar header does not need the strapline. */
   showTagline?: boolean;
   align?: "left" | "center";
-  priority?: boolean;
 }) {
-  const wordSize = Math.round(height * 0.52);
-  const taglineSize = Math.max(8, Math.round(height * 0.135));
-  const withTagline = showTagline && wordSize >= 18;
+  const withTagline = showTagline && height >= 36;
   const centered = align === "center";
 
   return (
@@ -137,96 +140,42 @@ export function AstraeyaLockup({
       } ${className}`}
       style={width ? { maxWidth: width } : undefined}
     >
-      <AstraeyaIcon size={height} priority={priority} />
-
-      <span
-        style={{
-          fontFamily: "var(--font-serif)",
-          fontSize: wordSize,
-          fontWeight: 500,
-          letterSpacing: "0.01em",
-          lineHeight: 1,
-          marginTop: height * 0.22,
-          color: "var(--text-primary)",
-        }}
-      >
-        <AstraeyaWordmark />
-      </span>
-
+      <AstraeyaLockupInline height={height} />
       {withTagline && (
-        <span
-          style={{
-            fontSize: taglineSize,
-            // Wide tracking is what makes a strapline read as one, and it has
-            // to scale with the type or it collapses at large sizes.
-            letterSpacing: "0.3em",
-            // Tracking adds space after the final letter too, which throws the
-            // block off-centre against the word above it.
-            marginRight: centered ? "-0.3em" : undefined,
-            marginTop: wordSize * 0.42,
-            textTransform: "uppercase",
-            color: "var(--text-secondary)",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {TAGLINE}
-        </span>
+        <Tagline
+          size={Math.max(8, Math.round(height * 0.17))}
+          marginTop={height * 0.28}
+          centered={centered}
+        />
       )}
     </span>
   );
 }
 
-/**
- * Mark and word side by side, for a horizontal header.
- *
- * Separate from the stacked lockup because that one is centred and this one is
- * not — one component doing both produced a lockup subtly wrong in whichever
- * place it was not designed for.
- */
-export function AstraeyaLockupInline({
-  height = 28,
-  className = "",
-  showTagline = false,
-  priority = false,
+function Tagline({
+  size,
+  marginTop,
+  centered = false,
 }: {
-  height?: number;
-  className?: string;
-  showTagline?: boolean;
-  priority?: boolean;
+  size: number;
+  marginTop: number;
+  centered?: boolean;
 }) {
-  const wordSize = Math.round(height * 0.72);
-
   return (
-    <span className={`inline-flex items-center gap-2.5 ${className}`}>
-      <AstraeyaIcon size={height} priority={priority} />
-      <span className="inline-flex flex-col leading-none">
-        <span
-          style={{
-            fontFamily: "var(--font-serif)",
-            fontSize: wordSize,
-            fontWeight: 500,
-            letterSpacing: "0.01em",
-            lineHeight: 1,
-            color: "var(--text-primary)",
-          }}
-        >
-          <AstraeyaWordmark />
-        </span>
-        {showTagline && (
-          <span
-            style={{
-              fontSize: Math.max(7, Math.round(height * 0.22)),
-              letterSpacing: "0.24em",
-              marginTop: height * 0.16,
-              textTransform: "uppercase",
-              color: "var(--text-secondary)",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {TAGLINE}
-          </span>
-        )}
-      </span>
+    <span
+      style={{
+        fontSize: size,
+        letterSpacing: "0.3em",
+        // Tracking adds space after the final letter too, which throws the
+        // block off-centre against the logo above it.
+        marginRight: centered ? "-0.3em" : undefined,
+        marginTop,
+        textTransform: "uppercase",
+        color: "var(--text-secondary)",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {TAGLINE}
     </span>
   );
 }

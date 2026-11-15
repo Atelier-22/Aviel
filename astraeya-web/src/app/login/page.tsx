@@ -70,7 +70,7 @@ function LoginForm() {
     <div className="flex min-h-screen items-center justify-center bg-[var(--bg-primary)] px-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center gap-2">
-          <AstraeyaLockup height={72} priority />
+          <AstraeyaLockup height={72} />
           <h1 className="text-xl font-semibold">Welcome back to Astraeya</h1>
         </div>
 

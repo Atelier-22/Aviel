@@ -344,12 +344,12 @@ export function Sidebar() {
           // The lockup already contains the wordmark, so the adjacent "Astraeya"
           // text it replaces would have been a duplicate.
           <Link href="/chat" aria-label="Astraeya — new chat">
-            <AstraeyaLockupInline height={26} />
+            <AstraeyaLockupInline height={30} />
           </Link>
         )}
         {collapsed && (
           <Link href="/chat" className="mx-auto" aria-label="Astraeya — new chat">
-            <AstraeyaIcon size={28} priority />
+            <AstraeyaIcon size={28} />
           </Link>
         )}
         <button

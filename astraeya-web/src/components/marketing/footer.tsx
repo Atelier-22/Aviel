@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AstraeyaIcon, AstraeyaWordmark } from "../logo";
+import { AstraeyaLockupInline } from "../logo";
 
 /**
  * Footer.
@@ -83,8 +83,7 @@ export function MarketingFooter() {
 
         <div className="mt-10 flex flex-col gap-3 border-t border-[var(--border-subtle)] pt-6 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
-            <AstraeyaIcon size={22} />
-            <AstraeyaWordmark className="text-sm font-medium" />
+            <AstraeyaLockupInline height={28} />
           </div>
           <p className="text-xs text-[var(--text-secondary)]">
             Built in Uganda. Designed for the world. © {new Date().getFullYear()}{" "}

@@ -13,7 +13,7 @@ export function GET() {
       description: "Astraeya — Built in Uganda. Designed for the world.",
       start_url: "/",
       display: "standalone",
-      background_color: "#0a0f0d",
+      background_color: "#000000",
       theme_color: "#1e6bff",
       icons: [
         {
@@ -27,6 +27,12 @@ export function GET() {
           sizes: "512x512",
           type: "image/png",
           purpose: "any",
+        },
+        {
+          src: "/brand/icon-maskable-512.png",
+          sizes: "512x512",
+          type: "image/png",
+          purpose: "maskable",
         },
       ],
     },

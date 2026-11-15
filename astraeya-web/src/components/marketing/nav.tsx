@@ -41,7 +41,7 @@ export function MarketingNav() {
     >
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-5 py-3">
         <Link href="/" aria-label="Astraeya — home">
-          <AstraeyaLockupInline height={26} />
+          <AstraeyaLockupInline height={34} />
         </Link>
 
         <nav className="hidden items-center gap-1 md:flex">
