@@ -37,8 +37,8 @@ const FAST_INSTRUCTION = `\n\nAnswer directly and briefly. Lead with the answer,
 
 const DEEP_INSTRUCTION = `\n\nThis question deserves care. Work through it before answering: consider the cases, name the assumptions you are making, and say where you are uncertain. Give a short summary of your reasoning, then the conclusion. Do not pad — depth means considering more, not writing more.`;
 
-const FAST_TOKENS = 1024;
-const DEEP_TOKENS = 8192;
+const FAST_TOKENS = 2048;
+const DEEP_TOKENS = 16000;
 
 /**
  * Which model, ceiling and instruction a mode implies for this account.

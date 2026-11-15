@@ -19,6 +19,7 @@ import { adminRouter } from "./routes/admin.routes";
 import { localAiRouter } from "./routes/local-ai.routes";
 import { sessionsRouter } from "./routes/sessions.routes";
 import { systemRouter } from "./routes/system.routes";
+import { filesRouter } from "./routes/files.routes";
 import {
   libraryRouter,
   usageRouter,
@@ -54,10 +55,10 @@ app.use(
   })
 );
 
-// Image attachments arrive base64-encoded, which inflates them by ~33%. The
-// per-attachment cap in the chat route is 5 MB, so the body ceiling has to sit
-// comfortably above that.
-app.use(express.json({ limit: "12mb" }));
+// Attachments arrive base64-encoded, which inflates them by ~33%. Documents
+// may be up to 50 MB each, so the body ceiling has to sit comfortably above
+// that once encoded.
+app.use(express.json({ limit: "100mb" }));
 
 app.get("/health", (_req, res) => {
   res.json({
@@ -80,6 +81,7 @@ app.use("/admin", adminRouter);
 app.use("/local-ai", localAiRouter);
 app.use("/sessions", sessionsRouter);
 app.use("/system", systemRouter);
+app.use("/files", filesRouter);
 app.use("/library", libraryRouter);
 app.use("/usage", usageRouter);
 app.use("/feedback", feedbackRouter);

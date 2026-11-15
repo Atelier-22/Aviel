@@ -1,11 +1,18 @@
 import { notFound } from "next/navigation";
 import { ChatWindow } from "@/components/chat/chat-window";
 import { serverApiFetch } from "@/lib/api-server";
+import type { MadeFile } from "@/components/chat/made-files";
 
 type ConversationDetail = {
   id: string;
   title: string;
-  messages: { id: string; role: string; content: string; createdAt: string }[];
+  messages: {
+    id: string;
+    role: string;
+    content: string;
+    createdAt: string;
+    files?: MadeFile[];
+  }[];
 };
 
 export default async function ChatPage({
@@ -25,11 +32,13 @@ export default async function ChatPage({
   return (
     <ChatWindow
       conversationId={conversation.id}
+      title={conversation.title}
       initialMessages={conversation.messages.map((m) => ({
         id: m.id,
         role: m.role as "user" | "assistant",
         content: m.content,
         createdAt: m.createdAt,
+        files: m.files,
       }))}
     />
   );

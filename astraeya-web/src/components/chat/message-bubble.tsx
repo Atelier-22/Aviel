@@ -1,9 +1,12 @@
 "use client";
 
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Cloud, HardDrive } from "lucide-react";
 import { CodeBlock } from "./code-block";
 import { MessageActions } from "./message-actions";
+import { MadeFiles, type MadeFile } from "./made-files";
+import { SvgPreview, extractSvg } from "./svg-preview";
 import { useSettingsGroup } from "@/lib/settings/store";
 
 export function MessageBubble({
@@ -14,10 +17,14 @@ export function MessageBubble({
   conversationId,
   isStreaming,
   onRetry,
+  onBranch,
   model,
   processedLocally,
   routingReason,
   showTypingIndicator = true,
+  isLatest = false,
+  files = [],
+  status,
 }: {
   id?: string;
   role: "user" | "assistant";
@@ -26,12 +33,19 @@ export function MessageBubble({
   conversationId?: string;
   isStreaming?: boolean;
   onRetry?: () => void;
+  onBranch?: () => void;
   /** Set when "Show which model answered" is on. */
   model?: string;
   processedLocally?: boolean;
   /** Developer mode only. */
   routingReason?: string;
   showTypingIndicator?: boolean;
+  /** The newest reply keeps its actions visible; older ones show them on hover. */
+  isLatest?: boolean;
+  /** Files Astraeya made with this reply. */
+  files?: MadeFile[];
+  /** What is happening while a reply is being worked on, e.g. "Creating your file…". */
+  status?: string;
 }) {
   const behavior = useSettingsGroup("behavior");
 
@@ -44,22 +58,32 @@ export function MessageBubble({
     });
 
   return (
-    <div className={`flex flex-col ${isUser ? "items-end" : "items-start"}`}>
+    <div
+      className={`group flex flex-col ${isUser ? "items-end" : "items-stretch"}`}
+    >
       <div
-        // Wider on a phone: 85% of a narrow screen wastes the margin without
-        // helping readability, which is what that limit is for on desktop.
+        // Your messages sit in a soft bubble on the right. Replies are text on
+        // the page, full column width — the way a document reads, which is
+        // what long study answers are.
         //
         // chat-bubble and chat-message carry the density, shape and line-height
         // that Appearance controls; the padding and radius live in CSS so a
         // preference change does not need this component to re-render.
-        className={`chat-bubble chat-message max-w-[92%] text-[15px] sm:max-w-[85%] sm:text-sm ${
+        className={
           isUser
-            ? "chat-bubble--user bg-accent-gradient text-white"
-            : "border border-[var(--border-subtle)] bg-[var(--bg-secondary)]"
-        }`}
+            ? "chat-bubble chat-bubble--user chat-message max-w-[88%] bg-[var(--user-bubble)] text-[15.5px] text-[var(--text-primary)] sm:max-w-[75%]"
+            : "chat-message chat-reply w-full text-[15.5px] text-[var(--text-primary)]"
+        }
       >
         {isUser ? (
           <span className="whitespace-pre-wrap">{content}</span>
+        ) : !content && status && isStreaming ? (
+          // Making a file takes longer than a reply. Saying what is happening
+          // is the difference between "working" and "stuck".
+          <span className="flex items-center gap-2 py-1 text-sm text-[var(--text-secondary)]" role="status">
+            <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--text-secondary)] border-t-transparent" />
+            {status}
+          </span>
         ) : !content ? (
           showTypingIndicator ? (
             // Waiting on the first token. A static ellipsis is indistinguishable
@@ -83,20 +107,43 @@ export function MessageBubble({
             </span>
           )
         ) : behavior.useMarkdown ? (
-          <div className="prose-Astraeya">
+          <div className="prose-astraeya">
             <ReactMarkdown
+              // GitHub-flavoured Markdown: tables, strikethrough, task lists and
+              // bare links. Without it a table arrives as rows of pipes.
+              remarkPlugins={[remarkGfm]}
               components={{
+                // Wide tables scroll inside the bubble instead of stretching it.
+                table({ children }) {
+                  return (
+                    <div className="table-scroll">
+                      <table>{children}</table>
+                    </div>
+                  );
+                },
+                a({ href, children }) {
+                  return (
+                    <a href={href} target="_blank" rel="noopener noreferrer">
+                      {children}
+                    </a>
+                  );
+                },
                 code({ className, children, ...props }) {
                   const match = /language-(\w+)/.exec(className || "");
                   const isBlock = className?.includes("language-");
                   // With code formatting off the model is asked not to fence
                   // code, but an older message may still contain a block.
                   if (isBlock && behavior.codeFormatting) {
+                    const code = String(children).replace(/\n$/, "");
+                    // A drawn logo or icon: show the picture, with downloads,
+                    // above its code.
+                    const svg =
+                      match && /^(svg|xml|html)$/.test(match[1]) ? extractSvg(code) : null;
                     return (
-                      <CodeBlock
-                        language={match?.[1]}
-                        code={String(children).replace(/\n$/, "")}
-                      />
+                      <>
+                        {svg && <SvgPreview svg={svg} />}
+                        <CodeBlock language={match?.[1]} code={code} />
+                      </>
                     );
                   }
                   return (
@@ -116,6 +163,15 @@ export function MessageBubble({
         )}
       </div>
 
+      {!isUser && <MadeFiles files={files} />}
+
+      {!isUser && status && isStreaming && content && (
+        <span className="mt-2 flex items-center gap-2 text-sm text-[var(--text-secondary)]" role="status">
+          <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--text-secondary)] border-t-transparent" />
+          {status}
+        </span>
+      )}
+
       {(time || model) && (
         <span className="mt-1 flex flex-wrap items-center gap-2 px-1 text-[11px] text-[var(--text-secondary)]">
           {time}
@@ -132,12 +188,37 @@ export function MessageBubble({
       )}
 
       {!isUser && content && !isStreaming && (
-        <MessageActions
-          content={content}
-          onRetry={onRetry}
-          messageId={id}
-          conversationId={conversationId}
-        />
+        // The newest reply keeps its actions in view. Older ones fade them in
+        // on hover, so a long conversation isn't striped with icon rows.
+        <div
+          className={`-ml-1.5 transition-opacity ${
+            isLatest
+              ? "opacity-100"
+              : "opacity-100 focus-within:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
+          }`}
+        >
+          <MessageActions
+            content={content}
+            onRetry={onRetry}
+            onBranch={onBranch}
+            messageId={id}
+            conversationId={conversationId}
+          />
+        </div>
+      )}
+
+      {isUser && content && (
+        // Floats in on hover (or keyboard focus) on a desktop; always shown on
+        // a touch screen, where there is no hover to reveal it.
+        <div className="opacity-100 transition-opacity focus-within:opacity-100 sm:opacity-0 sm:group-hover:opacity-100">
+          <MessageActions
+            variant="user"
+            content={content}
+            onBranch={onBranch}
+            messageId={id}
+            conversationId={conversationId}
+          />
+        </div>
       )}
     </div>
   );

@@ -57,6 +57,41 @@
       "when": 1794759501488,
       "tag": "0007_rebrand_astraeya_defaults",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794764719979,
+      "tag": "0008_student_features",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794765460995,
+      "tag": "0009_memory_on_by_default",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794768003251,
+      "tag": "0010_follow_device_theme",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794769242999,
+      "tag": "0011_generated_files",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1794769846578,
+      "tag": "0012_generated_file_links",
+      "breakpoints": true
     }
   ]
 }

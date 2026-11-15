@@ -26,8 +26,8 @@ describe("defaults", () => {
     }
   });
 
-  it("starts with memory off and training off", () => {
-    assert.equal(DEFAULT_SETTINGS.memory.enabled, false);
+  it("starts with memory on and training off", () => {
+    assert.equal(DEFAULT_SETTINGS.memory.enabled, true);
     assert.equal(DEFAULT_SETTINGS.privacy.trainingOptIn, false);
   });
 
@@ -42,7 +42,7 @@ describe("merge", () => {
     const next = mergeSettings(base(), { appearance: { theme: "dark" } });
     assert.equal(next.appearance.theme, "dark");
     assert.equal(next.appearance.accent, "blue");
-    assert.equal(next.memory.enabled, false);
+    assert.equal(next.memory.enabled, true);
   });
 
   it("does not mutate the input", () => {

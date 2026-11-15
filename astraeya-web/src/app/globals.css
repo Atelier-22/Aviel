@@ -242,50 +242,205 @@ body {
   }
 }
 
-.prose-Astraeya pre {
+/* ==========================================================================
+   Reply typography
+   ==========================================================================
+
+   Replies are read like study notes, so the hierarchy has to be obvious at a
+   glance: a clear step between heading levels, air between sections, and
+   lists, tables and quotes that look like what they are. */
+
+.prose-astraeya {
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.prose-astraeya > :first-child {
+  margin-top: 0 !important;
+}
+
+.prose-astraeya > :last-child {
+  margin-bottom: 0 !important;
+}
+
+.prose-astraeya p {
+  margin: 0.6rem 0;
+}
+
+.prose-astraeya h1,
+.prose-astraeya h2,
+.prose-astraeya h3,
+.prose-astraeya h4 {
+  font-weight: 650;
+  line-height: 1.3;
+  color: var(--text-primary);
+}
+
+.prose-astraeya h1 {
+  font-size: 1.35em;
+  margin: 1.25rem 0 0.6rem;
+}
+
+.prose-astraeya h2 {
+  font-size: 1.18em;
+  margin: 1.2rem 0 0.5rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.prose-astraeya h3 {
+  font-size: 1.05em;
+  margin: 1rem 0 0.4rem;
+}
+
+.prose-astraeya h4 {
+  font-size: 1em;
+  margin: 0.9rem 0 0.3rem;
+  color: var(--text-secondary);
+}
+
+.prose-astraeya strong {
+  font-weight: 650;
+  color: var(--text-primary);
+}
+
+.prose-astraeya ul,
+.prose-astraeya ol {
+  margin: 0.6rem 0;
+  padding-left: 1.4rem;
+}
+
+.prose-astraeya ul {
+  list-style: disc;
+}
+
+.prose-astraeya ul ul {
+  list-style: circle;
+}
+
+.prose-astraeya ol {
+  list-style: decimal;
+}
+
+.prose-astraeya li {
+  margin: 0.3rem 0;
+  padding-left: 0.15rem;
+}
+
+.prose-astraeya li > p {
+  margin: 0.2rem 0;
+}
+
+.prose-astraeya li::marker {
+  color: var(--text-secondary);
+}
+
+.prose-astraeya li ul,
+.prose-astraeya li ol {
+  margin: 0.25rem 0;
+}
+
+/* Task lists ("- [ ] read chapter 3") */
+.prose-astraeya li:has(> input[type="checkbox"]) {
+  list-style: none;
+  margin-left: -1.3rem;
+}
+
+.prose-astraeya input[type="checkbox"] {
+  margin-right: 0.45rem;
+  vertical-align: middle;
+}
+
+.prose-astraeya blockquote {
+  margin: 0.8rem 0;
+  padding: 0.5rem 0.9rem;
+  border-left: 3px solid var(--accent-solid);
+  background-color: rgba(0, 0, 0, 0.03);
+  border-radius: 0 0.5rem 0.5rem 0;
+  color: var(--text-secondary);
+}
+
+.dark .prose-astraeya blockquote {
+  background-color: rgba(255, 255, 255, 0.04);
+}
+
+.prose-astraeya blockquote p {
+  margin: 0.25rem 0;
+}
+
+.prose-astraeya hr {
+  margin: 1.2rem 0;
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.prose-astraeya a {
+  color: var(--accent-solid);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.prose-astraeya code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.875em;
+}
+
+/* Inline code only — fenced blocks are drawn by CodeBlock. */
+.prose-astraeya :not(pre) > code {
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.35rem;
+  background-color: rgba(0, 0, 0, 0.06);
+}
+
+.dark .prose-astraeya :not(pre) > code {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.prose-astraeya pre {
+  margin: 0.8rem 0;
   background-color: rgba(0, 0, 0, 0.04);
   border-radius: 0.75rem;
   padding: 1rem;
   overflow-x: auto;
 }
 
-.dark .prose-Astraeya pre {
+.dark .prose-astraeya pre {
   background-color: rgba(255, 255, 255, 0.06);
 }
 
-.prose-Astraeya code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.875em;
+.prose-astraeya .table-scroll {
+  margin: 0.8rem 0;
+  overflow-x: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.6rem;
 }
 
-.prose-Astraeya p {
-  margin: 0.35rem 0;
+.prose-astraeya table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95em;
 }
 
-.prose-Astraeya ul,
-.prose-Astraeya ol {
-  margin: 0.35rem 0;
-  padding-left: 1.25rem;
+.prose-astraeya th,
+.prose-astraeya td {
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
-.prose-Astraeya ul {
-  list-style: disc;
+.prose-astraeya th {
+  font-weight: 650;
+  background-color: rgba(0, 0, 0, 0.04);
+  white-space: nowrap;
 }
 
-.prose-Astraeya ol {
-  list-style: decimal;
+.dark .prose-astraeya th {
+  background-color: rgba(255, 255, 255, 0.06);
 }
 
-.prose-Astraeya h1,
-.prose-Astraeya h2,
-.prose-Astraeya h3 {
-  font-weight: 600;
-  margin: 0.6rem 0 0.3rem;
-}
-
-.prose-Astraeya a {
-  color: var(--accent-solid);
-  text-decoration: underline;
+.prose-astraeya tr:last-child td {
+  border-bottom: 0;
 }
 
 /* ==========================================================================
@@ -542,7 +697,7 @@ html[data-bubble="minimal"] .chat-bubble--user {
   cursor: pointer;
 }
 
-.prose-Astraeya code {
+.prose-astraeya code {
   font-size: var(--code-size, 0.875em);
 }
 
@@ -1804,4 +1959,127 @@ html[data-bubble="minimal"] .chat-bubble--user {
 [data-animations="off"] .voice-main-wave i,
 [data-animations="off"] .voice-sheet {
   animation: none;
+}
+
+/* ==========================================================================
+   Product refresh — calm, document-like chat
+   ==========================================================================
+
+   Replies read as text on the page, your messages sit in a soft bubble, and
+   the composer is one quiet rounded box that floats over the conversation.
+   Colours stay Astraeya's: brand blue for actions, the green-tinted neutrals
+   for surfaces. Placed last so it settles the earlier composer rules. */
+
+:root {
+  --user-bubble: #e6eefc;
+  --composer-bg: #ffffff;
+  --composer-bg-focus: #ffffff;
+  --composer-border: rgba(11, 21, 18, 0.12);
+  --composer-border-focus: rgba(11, 21, 18, 0.22);
+  --composer-shadow: 0 1px 2px rgba(11, 21, 18, 0.04), 0 6px 24px -10px rgba(11, 21, 18, 0.16);
+  --composer-placeholder: rgba(11, 21, 18, 0.42);
+}
+
+.dark {
+  --user-bubble: #1a2330;
+  --composer-bg: #141b18;
+  --composer-bg-focus: #161e1b;
+  --composer-border: rgba(255, 255, 255, 0.1);
+  --composer-border-focus: rgba(255, 255, 255, 0.2);
+  --composer-shadow: 0 6px 24px -10px rgba(0, 0, 0, 0.6);
+  --composer-placeholder: rgba(255, 255, 255, 0.45);
+}
+
+html[data-amoled="on"] {
+  --user-bubble: #121821;
+  --composer-bg: #0b0f0d;
+}
+
+/* The composer box */
+.hx-composer {
+  max-width: none;
+  min-height: 0;
+  border-radius: 22px;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.hx-composer:focus-within {
+  box-shadow: var(--composer-shadow), 0 0 0 3px color-mix(in srgb, var(--brand) 12%, transparent);
+}
+
+.hx-composer-field {
+  font-size: 16px; /* 16px: iOS does not zoom a focused field at this size */
+  line-height: 1.5;
+  padding: 16px 18px 54px 18px;
+  min-height: 104px;
+  max-height: 40vh;
+}
+
+.hx-rail {
+  bottom: 10px;
+}
+
+.hx-rail--left {
+  left: 10px;
+}
+
+.hx-rail--right {
+  right: 10px;
+  gap: 6px;
+}
+
+.hx-icon-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+}
+
+.hx-icon-btn--plus {
+  background-color: transparent;
+  border: 1px solid var(--composer-border);
+}
+
+/* Send / stop / live voice: a rounded square in brand blue. */
+.hx-action {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  box-shadow: none;
+  background-color: var(--brand);
+}
+
+.hx-action:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--brand) 85%, #000);
+}
+
+/* The dock under a conversation: content fades out beneath the composer
+   instead of stopping at a ruled line. */
+.composer-dock {
+  background: linear-gradient(to bottom, transparent, var(--bg-primary) 28%);
+  margin-top: -28px;
+  padding-top: 28px;
+}
+
+/* Replies: a comfortable reading size and measure. */
+.chat-reply {
+  font-size: 16px;
+  line-height: var(--chat-leading, 1.7);
+}
+
+.chat-stack {
+  gap: var(--message-gap, 1.5rem);
+}
+
+/* Your messages: generous rounding, no tail, no border. */
+html .chat-bubble--user {
+  border-radius: 18px;
+  padding: 10px 16px;
+}
+
+/* Phone: the sidebar is a drawer, so the content gets the full width. */
+@media (max-width: 767px) {
+  .hx-composer-field {
+    min-height: 88px;
+  }
 }

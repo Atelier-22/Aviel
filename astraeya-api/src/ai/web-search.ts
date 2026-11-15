@@ -37,7 +37,7 @@ export async function searchWeb(query: string): Promise<WebSearchResult[]> {
   try {
     const response = await fetch(
       `https://html.duckduckgo.com/html/?q=${encodeURIComponent(trimmed)}`,
-      { headers: BROWSER_HEADERS, signal: AbortSignal.timeout(8_000) }
+      { headers: BROWSER_HEADERS, signal: AbortSignal.timeout(5_000) }
     );
 
     if (!response.ok) return [];

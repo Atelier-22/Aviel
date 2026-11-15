@@ -31,6 +31,20 @@ export interface GenerationOptions {
   temperature?: number;
   /** Let the model search the web for this turn. */
   webSearch?: boolean;
+  /**
+   * How much the model thinks before answering. Fast replies use low, normal
+   * replies medium, Deep think high. Providers without the control ignore it.
+   */
+  effort?: "low" | "medium" | "high";
+  /**
+   * `systemPrompt` split in two, for providers that cache: the part that is
+   * the same on every message, and the part written for this message only.
+   * Providers that don't cache use `systemPrompt`, which is the two joined.
+   */
+  stableSystemPrompt?: string;
+  turnNotes?: string;
+  /** Make files this turn (documents, slides, sheets, charts, edited images). */
+  fileMaking?: FileMaking;
 }
 
 export interface WebSource {
@@ -38,12 +52,34 @@ export interface WebSource {
   url: string;
 }
 
+/** A file the model created in its sandbox, held in the provider's file store. */
+export interface MadeFile {
+  providerFileId: string;
+  filename: string;
+  mediaType: string;
+  sizeBytes: number | null;
+}
+
 export interface StreamChunk {
-  type: "text" | "done" | "error" | "searching" | "sources";
+  type: "text" | "done" | "error" | "searching" | "sources" | "status" | "file" | "container";
   text?: string;
   error?: string;
   /** Present on "sources": the pages the model actually consulted. */
   sources?: WebSource[];
+  /** Present on "status": what is happening, for the user, e.g. "Creating your file…". */
+  status?: string;
+  /** Present on "file": a finished file to hand to the user. */
+  file?: MadeFile;
+  /** Present on "container": the sandbox id, so a follow-up can keep editing. */
+  containerId?: string;
+}
+
+/** Turns on the code sandbox and document skills for one reply. */
+export interface FileMaking {
+  /** Files the user attached, made available inside the sandbox. */
+  uploads: { name: string; mediaType: string; base64: string }[];
+  /** The sandbox from this conversation's last file, if it is still alive. */
+  containerId?: string;
 }
 
 /**

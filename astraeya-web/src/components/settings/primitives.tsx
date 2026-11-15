@@ -203,8 +203,11 @@ export function SettingsToggle({
       }`}
     >
       <span
-        className={`pointer-events-none absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
-          checked ? "translate-x-5" : "translate-x-0.5"
+        // Pinned to the left edge: without `left-0` the knob takes the
+        // button's centred content position, so "off" sat near the middle and
+        // "on" slid past the right edge — the switch looked reversed.
+        className={`pointer-events-none absolute left-0 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
+          checked ? "translate-x-[22px]" : "translate-x-0.5"
         }`}
       />
     </button>

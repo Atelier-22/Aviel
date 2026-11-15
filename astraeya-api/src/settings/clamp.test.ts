@@ -42,7 +42,8 @@ describe("platform clamping", () => {
   });
 
   it("never switches something on that the user turned off", () => {
-    const settings = defaultSettings(); // memory off by default
+    const settings = defaultSettings();
+    settings.memory.enabled = false;
     const clamped = clampToPlatform(settings, config);
     assert.equal(clamped.memory.enabled, false);
   });

@@ -191,7 +191,7 @@ export async function updateSessionContext(params: {
       known.length ? known.map((k) => `- ${k}`).join("\n") : "(nothing yet)"
     }\n\nThe exchange:\nUser: ${params.userMessage.slice(0, 3000)}\nAssistant: ${params.assistantMessage.slice(0, 3000)}`,
     CONTEXT_PROMPT,
-    { vendorModel: "claude-haiku-4-5", maxTokens: 400 }
+    { vendorModel: "claude-haiku-5-5", maxTokens: 1024 }
   );
 
   const fresh = contextFactsFrom(text).filter(

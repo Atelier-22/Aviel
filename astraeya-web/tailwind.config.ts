@@ -55,6 +55,9 @@ const config: Config = {
           "Arial",
           "sans-serif",
         ],
+        // The wordmark's face, for the few display lines that echo the logo
+        // (the new-chat greeting). Body text stays in the system sans.
+        serif: ["var(--font-serif)", "Georgia", "serif"],
       },
       borderRadius: {
         xl2: "1.25rem",

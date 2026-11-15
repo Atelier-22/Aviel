@@ -17,7 +17,7 @@ describe("settings schema", () => {
       assert.ok(settings[group], `${group} is missing from the defaults`);
     }
     assert.equal(settings.personality.responseStyle, "balanced");
-    assert.equal(settings.memory.enabled, false);
+    assert.equal(settings.memory.enabled, true);
     assert.equal(settings.conversation.retentionDays, 0);
   });
 

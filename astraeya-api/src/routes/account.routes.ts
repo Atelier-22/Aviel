@@ -5,6 +5,7 @@ import { asc, desc, eq } from "drizzle-orm";
 import { db, schema } from "../db";
 import { requireAuth, asyncHandler } from "../auth/middleware";
 import { signToken } from "../auth/jwt";
+import { purgeUserFiles } from "../services/files.service";
 
 export const accountRouter = Router();
 
@@ -164,6 +165,9 @@ accountRouter.post(
   asyncHandler(async (req, res) => {
     const userId = req.userId!;
 
+    // Made files live partly outside the database, so they go first.
+    await purgeUserFiles(userId);
+
     // Messages, and library assets tied to a conversation, go with the
     // conversations via ON DELETE CASCADE.
     await db
@@ -205,6 +209,8 @@ accountRouter.delete(
       res.status(401).json({ error: "Password is incorrect" });
       return;
     }
+
+    await purgeUserFiles(user.id);
 
     // Every other table references users.id with ON DELETE CASCADE.
     await db.delete(schema.users).where(eq(schema.users.id, user.id));

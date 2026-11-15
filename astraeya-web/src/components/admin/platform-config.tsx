@@ -15,6 +15,7 @@ type Features = Record<string, boolean>;
 type Limits = {
   messagesPerDay: number;
   imageGenerationsPerDay: number;
+  filesPerDay: number;
   imageUploadsPerDay: number;
   voiceMinutesPerDay: number;
   maxUploadMb: number;
@@ -59,6 +60,7 @@ const FEATURE_LABELS: Record<string, string> = {
   imageAnalysis: "Image analysis",
   imageGeneration: "Image generation",
   fileUploads: "File uploads",
+  fileCreation: "File creation (documents, slides, sheets, charts)",
   memory: "Memory",
   projects: "Projects",
   library: "Library",
@@ -70,6 +72,7 @@ const FEATURE_LABELS: Record<string, string> = {
 const LIMIT_LABELS: { key: keyof Limits; label: string; hint: string }[] = [
   { key: "messagesPerDay", label: "Messages per day", hint: "0 means no limit" },
   { key: "imageGenerationsPerDay", label: "Image generations per day", hint: "0 means no limit" },
+  { key: "filesPerDay", label: "Files created per day", hint: "Documents, slides, sheets and charts. 0 means no limit" },
   { key: "imageUploadsPerDay", label: "Image uploads per day", hint: "0 means no limit" },
   { key: "voiceMinutesPerDay", label: "Voice minutes per day", hint: "0 means no limit" },
   { key: "maxUploadMb", label: "Maximum file size (MB)", hint: "1–100" },

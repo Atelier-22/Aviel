@@ -20,7 +20,7 @@ const envSchema = z.object({
   // Optional — the provider layer reports "not configured" rather than faking
   // responses when this is absent.
   ANTHROPIC_API_KEY: z.string().optional(),
-  ANTHROPIC_MODEL: z.string().default("claude-sonnet-4-6"),
+  ANTHROPIC_MODEL: z.string().default("claude-sonnet-5-5"),
 
   // Optional second provider. Absent means its models simply are not offered.
   DEEPSEEK_API_KEY: z.string().optional(),

@@ -25,17 +25,24 @@ const CATEGORY_GUIDE = `Each fact must be filed under exactly one category:
 
 const EXTRACTION_PROMPT = `You maintain a long-term memory about a user of an AI assistant.
 
-Read the exchange and decide whether it revealed anything durably true about the user that would make future conversations better.
+Read the exchange and record everything it revealed about the user that would help in a future conversation, so they never have to repeat themselves.
 
 ${CATEGORY_GUIDE}
 
+Most users are students. Always worth keeping when stated:
+- Their name, and what they like to be called
+- Where and what they study: institution, course or programme, year or level, subjects or units
+- Assignments, exams, projects and research topics they are working on, with deadlines if given
+- How they like to be helped: depth, format, language, citation style, writing voice
+- Goals, interests, career plans, and anything they ask you to remember
+
 Never record:
-- One-off questions or the subject of this conversation
 - Anything already covered by an existing memory
-- Sensitive personal data: health, finances, credentials, government identifiers, anything about named third parties
+- Passwords, credentials, payment details, government identifiers, or health details
+- Private details about other named people
 - Guesses. If it was not clearly stated or plainly implied, leave it out
 
-Most exchanges reveal nothing worth keeping. Returning an empty list is the normal, correct outcome — do not invent something to record.
+If the user explicitly asks you to remember something, record it. If the exchange revealed nothing new about the user, return an empty list — do not invent something to record.
 
 Reply with JSON only, in this exact shape:
 {"facts": [{"text": "...", "category": "preferences"}]}
@@ -139,7 +146,7 @@ export async function learnFromExchange(params: {
       known.length ? known.map((k) => `- ${k}`).join("\n") : "(nothing yet)"
     }\n\nThe exchange:\nUser: ${params.userMessage.slice(0, 3000)}\nAssistant: ${params.assistantMessage.slice(0, 3000)}`,
     EXTRACTION_PROMPT,
-    { vendorModel: "claude-haiku-4-5", maxTokens: 400 }
+    { vendorModel: "claude-haiku-5-5", maxTokens: 1024 }
   );
 
   const fresh = factsFrom(text)

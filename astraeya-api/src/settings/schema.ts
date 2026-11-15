@@ -108,7 +108,7 @@ export const behaviorSchema = z.object({
   avoidRepetition: z.boolean().default(true),
   autoSummarizeLong: z.boolean().default(false),
   useConversationContext: z.boolean().default(true),
-  citeSources: z.boolean().default(true),
+  citeSources: z.boolean().default(false),
   verifyInformation: z.boolean().default(true),
   admitUncertainty: z.boolean().default(true),
   useMarkdown: z.boolean().default(true),
@@ -119,7 +119,9 @@ export const behaviorSchema = z.object({
 });
 
 export const memorySchema = z.object({
-  enabled: z.boolean().default(false),
+  // On by default: knowing the user — so they never have to repeat themselves —
+  // is a core part of what Astraeya is for. It can be switched off in Settings.
+  enabled: z.boolean().default(true),
   /** Write new memories on its own, rather than only what you add by hand. */
   autoCapture: z.boolean().default(true),
   rememberPreferences: z.boolean().default(true),
@@ -127,7 +129,7 @@ export const memorySchema = z.object({
   rememberProjects: z.boolean().default(true),
   rememberConversationContext: z.boolean().default(true),
   /** How many entries are injected into the system prompt. */
-  maxEntriesInPrompt: z.number().int().min(1).max(60).default(20),
+  maxEntriesInPrompt: z.number().int().min(1).max(60).default(40),
 });
 
 export const MEMORY_CATEGORIES = [
@@ -144,7 +146,7 @@ export const conversationSchema = z.object({
   /** 0 keeps conversations indefinitely. Anything else is swept server-side. */
   retentionDays: z.union([z.literal(0), z.literal(30), z.literal(90), z.literal(365)]).default(0),
   autoTitle: z.boolean().default(true),
-  showTimestamps: z.boolean().default(true),
+  showTimestamps: z.boolean().default(false),
   showModelUsed: z.boolean().default(false),
   showUsage: z.boolean().default(false),
   streamResponses: z.boolean().default(true),
@@ -349,7 +351,7 @@ export const offlineSchema = z.object({
 
 export const advancedSchema = z.object({
   temperature: z.number().min(0).max(2).default(1),
-  maxOutputTokens: z.number().int().min(256).max(32000).default(4096),
+  maxOutputTokens: z.number().int().min(256).max(32000).default(8192),
   streaming: z.boolean().default(true),
   debugMode: z.boolean().default(false),
   developerMode: z.boolean().default(false),

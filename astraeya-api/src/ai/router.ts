@@ -61,6 +61,10 @@ async function callApi(
         ...(systemPrompt ? { systemPrompt } : {}),
         ...(options.maxTokens ? { maxTokens: options.maxTokens } : {}),
         model: options.vendorModel ?? resolveModelId(options.model),
+        // Background jobs (memory, session notes) are short extractions:
+        // little thinking, so they are quick and the token budget goes to the
+        // answer.
+        effort: "low",
       }
     )) {
       // The provider reports failures as an error chunk rather than throwing,

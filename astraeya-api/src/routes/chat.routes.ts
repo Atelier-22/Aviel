@@ -11,9 +11,27 @@ import {
   buildMessageHistory,
   buildSystemPrompt,
   getChatContext,
+  recallPastConversations,
 } from "../services/chat.service";
+import {
+  FILE_MAKING_NOTE,
+  VECTOR_ART_NOTE,
+  memoryPromptBlock,
+  recallPromptBlock,
+} from "../services/prompt.service";
+import { extractDocument, formatDocuments } from "../services/documents.service";
 import { getProvider, providerForModel, resolveModelId } from "../ai";
 import type { ChatImage, ChatMessage, StreamChunk } from "../ai";
+import type { AIProvider, FileMaking, GenerationOptions } from "../ai/provider.interface";
+import { wantsFileEdit, wantsFileOutput, wantsVectorArt } from "../ai/file-intent";
+import { VIDEO_TYPES } from "../services/documents.service";
+import {
+  attachFilesToMessage,
+  lastReplyMadeFile,
+  recordMadeFile,
+  toClientFile,
+  type FileForClient,
+} from "../services/files.service";
 import { selectModel } from "../ai/routing";
 import { resolveThinkMode } from "../ai/think";
 import { generateLocal, isLocalModelAvailable } from "../ai/local-model";
@@ -65,6 +83,38 @@ function decodedByteLength(base64: string): number {
   const padding = base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0;
   return Math.floor((base64.length * 3) / 4) - padding;
 }
+
+/**
+ * The provider's stream, retried once without the saved sandbox when that
+ * sandbox has expired. A conversation keeps its sandbox so a follow-up can
+ * edit the same file, but sandboxes do not live for ever, and a dead one makes
+ * the request fail before anything is written.
+ */
+async function* streamWithSandboxRetry(
+  provider: AIProvider,
+  history: ChatMessage[],
+  generation: GenerationOptions
+): AsyncGenerator<StreamChunk> {
+  let produced = false;
+  let retry = false;
+  for await (const chunk of provider.streamCompletion(history, generation)) {
+    if (chunk.type === "error" && !produced && generation.fileMaking?.containerId) {
+      retry = true;
+      break;
+    }
+    if (chunk.type === "text" || chunk.type === "file") produced = true;
+    yield chunk;
+  }
+  if (retry && generation.fileMaking) {
+    yield* provider.streamCompletion(history, {
+      ...generation,
+      fileMaking: { ...generation.fileMaking, containerId: undefined },
+    });
+  }
+}
+
+/** What the user is told the files are, if a reply made files but wrote nothing. */
+const FILES_ONLY_REPLY = "Here is your file.";
 
 async function saveAttachmentsToLibrary(
   userId: string,
@@ -254,6 +304,21 @@ chatRouter.post(
       return;
     }
 
+    // Documents are read on the server, so they can be large. Images are sent
+    // to the model as they are, and the model accepts at most 5 MB per image.
+    const MAX_IMAGE_BYTES = 5_000_000;
+    const oversizedImage = attachments.find(
+      (a) =>
+        a.mediaType.startsWith("image/") &&
+        decodedByteLength(a.base64) > MAX_IMAGE_BYTES
+    );
+    if (oversizedImage) {
+      res.status(413).json({
+        error: `"${oversizedImage.name}" is larger than 5 MB. Images can be at most 5 MB — try a smaller or compressed copy.`,
+      });
+      return;
+    }
+
     const disallowed = attachments.find(
       (a) => !config.allowedFileTypes.includes(a.mediaType)
     );
@@ -356,11 +421,24 @@ chatRouter.post(
         ? `${storedContent}\n\n[Attached: ${names}]`
         : `[Attached: ${names}]`;
     }
-    if (otherAttachments.length > 0) {
-      storedContent += `\n\n(Note: only image attachments are analyzed right now — document content isn't read yet.)`;
-    }
+    // Documents are read here, once, and their text is stored with the
+    // message so every later turn — and conversation recall — can use it.
+    // Scanned pages and videos are read by the hosted model, so not for an
+    // account that has asked for everything to stay on this server.
+    const allowVisualReading =
+      !settings.privacy.localOnly && settings.ai.provider !== "local";
+    const extractedDocs = await Promise.all(
+      otherAttachments.map((doc) => extractDocument(doc, { allowVisualReading }))
+    );
+    const documentText =
+      extractedDocs.length > 0 ? formatDocuments(extractedDocs) : null;
 
-    await saveMessage(conversation.id, "user", storedContent);
+    const savedUserMessage = await saveMessage(
+      conversation.id,
+      "user",
+      storedContent,
+      documentText
+    );
     await recordUsage(userId, "message");
 
     if (attachments.length > 0 && settings.images.saveUploads) {
@@ -380,6 +458,52 @@ chatRouter.post(
       );
     }
 
+    // ---- File making ------------------------------------------------------
+    // Documents, slides, sheets, charts and image edits are made by running
+    // code in an isolated sandbox. It is slower and dearer than a reply, so it
+    // is opened only for a message that asks for a file — or that changes a
+    // file the previous reply made.
+    const fileRequest =
+      wantsFileOutput({
+        message,
+        attachmentTypes: attachments.map((a) => a.mediaType),
+      }) ||
+      (wantsFileEdit(message) && (await lastReplyMadeFile(conversation.id)));
+    const sandboxAvailable =
+      config.features.fileCreation &&
+      providerUsable &&
+      provider.id === "anthropic" &&
+      !settings.privacy.localOnly;
+
+    let fileMaking: FileMaking | undefined;
+    const fileNotes: string[] = [];
+    if (fileRequest && sandboxAvailable) {
+      const fileAllowance = await checkLimit(userId, "file");
+      if (fileAllowance.allowed) {
+        fileMaking = {
+          // Videos are read as text above; the sandbox has no use for them.
+          uploads: attachments
+            .filter((a) => !(a.mediaType in VIDEO_TYPES))
+            .map((a) => ({ name: a.name, mediaType: a.mediaType, base64: a.base64 })),
+          containerId: conversation.sandboxId ?? undefined,
+        };
+        await recordUsage(userId, "file");
+        fileNotes.push(FILE_MAKING_NOTE(fileMaking.uploads.map((u) => u.name)));
+      } else {
+        fileNotes.push(
+          `\n\nThe user asked for a file, but they have reached today's limit for file creation (${fileAllowance.message}). Tell them so plainly, then give the content in the chat so they can still use it.`
+        );
+      }
+    } else if (fileRequest) {
+      fileNotes.push(
+        `\n\nThe user asked for a file, but file creation is not available ${
+          settings.privacy.localOnly || provider.id === "local"
+            ? "while everything is processed on this server"
+            : "on this model or server right now"
+        }. Say so in one sentence, then give the full content in the chat, well formatted, so they can copy it. The reply has a download button for Word and Markdown.`
+      );
+    }
+
     // ---- Turn-specific prompt notes ---------------------------------------
     const wantsSearch = settings.ai.webSearch && config.features.webSearch;
     const canSearch = providerUsable && provider.capabilities.webSearch && wantsSearch;
@@ -394,7 +518,7 @@ chatRouter.post(
       );
       if (webSearchEnabled) {
         notes.push(
-          `\n\nThe user has explicitly asked you to look this up. Search the web for this message even if you think you know the answer, and cite what you used.`
+          `\n\nThe user has explicitly asked you to look this up. Search the web for this message even if you think you know the answer.`
         );
       }
     } else {
@@ -419,6 +543,37 @@ chatRouter.post(
       );
     }
 
+    const unreadable = extractedDocs.filter((d) => d.text === null);
+    if (unreadable.length > 0) {
+      notes.push(
+        `\n\nSome attached documents could not be read: ${unreadable
+          .map((d) => `"${d.name}" (${d.error})`)
+          .join("; ")}. Tell the user plainly which ones, and why, instead of guessing at their contents.`
+      );
+    }
+
+    // Recall from the user's other conversations, so they never have to repeat
+    // themselves. Governed by the same switches as the rest of memory.
+    if (
+      settings.memory.enabled &&
+      settings.memory.rememberConversationContext &&
+      !memoryExcluded &&
+      message.trim()
+    ) {
+      notes.push(
+        recallPromptBlock(
+          await recallPastConversations({
+            userId,
+            currentConversationId: conversation.id,
+            query: message,
+          })
+        )
+      );
+    }
+
+    notes.push(...fileNotes);
+    if (!fileMaking && wantsVectorArt(message)) notes.push(VECTOR_ART_NOTE);
+
     if (session) notes.push(sessionPromptBlock(session));
 
     // Fast asks for brevity, Deep asks for working. Balanced adds nothing,
@@ -442,18 +597,29 @@ chatRouter.post(
       }));
     }
 
-    const systemPrompt = buildSystemPrompt({
+    // The account-level prompt stays identical from one message to the next,
+    // so the provider can cache it with the conversation. What changes every
+    // turn (recall excerpts, search and attachment notes) travels separately.
+    //
+    // Memory travels with the turn too: a newly learned fact would otherwise
+    // change the cached prefix and make the next message start from scratch.
+    const stableSystemPrompt = buildSystemPrompt({
       user,
       settings,
-      memoryEntries,
       projectInstructions,
-      notes,
     });
+    const turnNotes = memoryPromptBlock(memoryEntries) + notes.join("");
+    const systemPrompt = stableSystemPrompt + turnNotes;
 
-    const generation = {
+    const generation: GenerationOptions = {
       systemPrompt,
+      stableSystemPrompt,
+      turnNotes,
       model: vendorModel,
       webSearch: canSearch,
+      // Balanced and Fast answer straight away; Deep thinks hard first.
+      effort: (think.mode === "deep" ? "high" : "low") as GenerationOptions["effort"],
+      ...(fileMaking ? { fileMaking } : {}),
       // The think mode can only narrow the account's ceiling, never widen it
       // past what the platform allows.
       maxTokens: Math.min(
@@ -515,6 +681,34 @@ chatRouter.post(
       // than on a reasoning tier — the composer says so rather than letting
       // the label imply otherwise.
       nativeReasoning: think.nativeReasoning,
+      makingFiles: Boolean(fileMaking),
+    };
+
+    /** Files made this turn, recorded as they arrive. */
+    const madeFiles: FileForClient[] = [];
+    const handleFileChunk = async (chunk: StreamChunk): Promise<FileForClient | null> => {
+      if (chunk.type === "file" && chunk.file) {
+        const row = await recordMadeFile({ userId, conversationId: conversation.id, file: chunk.file });
+        const clientFile = toClientFile(row);
+        madeFiles.push(clientFile);
+        return clientFile;
+      }
+      if (chunk.type === "container" && chunk.containerId) {
+        await db
+          .update(schema.conversations)
+          .set({ sandboxId: chunk.containerId })
+          .where(eq(schema.conversations.id, conversation.id));
+      }
+      return null;
+    };
+
+    /** Saves the reply and ties this turn's files to it. */
+    const saveReply = async (fullText: string) => {
+      const text = fullText.trim() ? fullText : madeFiles.length ? FILES_ONLY_REPLY : "";
+      if (!text) return null;
+      const saved = await saveMessage(conversation.id, "assistant", text);
+      await attachFilesToMessage(madeFiles.map((f) => f.id), saved.id);
+      return saved;
     };
 
     const wantsStream =
@@ -547,7 +741,7 @@ chatRouter.post(
 
       try {
         const stream = providerUsable
-          ? provider.streamCompletion(history, generation)
+          ? streamWithSandboxRetry(provider, history, generation)
           : ([{ type: "error", error: NO_PROVIDER_MESSAGE }] as StreamChunk[]);
 
         for await (const chunk of stream) {
@@ -557,6 +751,11 @@ chatRouter.post(
             send("chunk", { text: chunk.text });
           } else if (chunk.type === "searching") {
             send("searching", {});
+          } else if (chunk.type === "status") {
+            send("status", { text: chunk.status });
+          } else if (chunk.type === "file" || chunk.type === "container") {
+            const made = await handleFileChunk(chunk);
+            if (made) send("file", { file: made });
           } else if (chunk.type === "sources") {
             send("sources", { sources: chunk.sources });
           } else if (chunk.type === "error") {
@@ -570,7 +769,7 @@ chatRouter.post(
           // Only a turn that produced nothing is worth retrying. Half an answer
           // plus a different model finishing it would read as one reply that
           // changes voice mid-sentence.
-          const retry = fullText.trim()
+          const retry = fullText.trim() || madeFiles.length
             ? null
             : await fallbackModelReply(
                 history,
@@ -599,13 +798,17 @@ chatRouter.post(
 
         // Persist whatever was generated even if the user hit stop — a partial
         // answer they saw on screen should still be there on reload.
-        if (fullText.trim().length > 0) {
-          await saveMessage(conversation.id, "assistant", fullText);
-        }
+        const savedReply = await saveReply(fullText);
 
         await afterReply(fullText);
 
-        if (!clientGone) send("done", {});
+        // The real ids, so the client can act on these messages (branching)
+        // without reloading the conversation.
+        if (!clientGone)
+          send("done", {
+            userMessageId: savedUserMessage.id,
+            assistantMessageId: savedReply?.id ?? null,
+          });
       } catch (err) {
         if (!clientGone) {
           send("error", {
@@ -627,8 +830,9 @@ chatRouter.post(
     if (!providerUsable) {
       streamError = NO_PROVIDER_MESSAGE;
     } else {
-      for await (const chunk of provider.streamCompletion(history, generation)) {
-        if (chunk.type === "text" && chunk.text) fullText += chunk.text;
+      for await (const chunk of streamWithSandboxRetry(provider, history, generation)) {
+        if (chunk.type === "file" || chunk.type === "container") await handleFileChunk(chunk);
+        else if (chunk.type === "text" && chunk.text) fullText += chunk.text;
         else if (chunk.type === "sources" && chunk.sources)
           collectedSources.push(...chunk.sources);
         else if (chunk.type === "error")
@@ -636,7 +840,7 @@ chatRouter.post(
       }
     }
 
-    if (streamError && !fullText) {
+    if (streamError && !fullText && madeFiles.length === 0) {
       const retry = await fallbackModelReply(
         history,
         systemPrompt,
@@ -659,15 +863,16 @@ chatRouter.post(
       }
     }
 
-    if (fullText.trim().length > 0) {
-      await saveMessage(conversation.id, "assistant", fullText);
-    }
+    const savedReply = await saveReply(fullText);
 
     await afterReply(fullText);
 
     res.json({
+      ...(madeFiles.length ? { files: madeFiles } : {}),
       ...meta,
-      reply: fullText,
+      userMessageId: savedUserMessage.id,
+      assistantMessageId: savedReply?.id ?? null,
+      reply: savedReply?.content ?? fullText,
       ...(collectedSources.length ? { sources: collectedSources } : {}),
       ...(settings.conversation.saveConversations ? {} : { retained: false }),
       ...(streamError ? { warning: streamError } : {}),

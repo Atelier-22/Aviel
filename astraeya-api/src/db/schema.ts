@@ -17,7 +17,7 @@ import {
   index,
 } from "drizzle-orm/pg-core";
 import { createId } from "@paralleldrive/cuid2";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 
 const id = () =>
   text("id")
@@ -133,14 +133,14 @@ export const userSettings = pgTable("user_settings", {
     .notNull()
     .unique()
     .references(() => users.id, { onDelete: "cascade" }),
-  theme: text("theme").notNull().default("light"),
+  theme: text("theme").notNull().default("system"),
   accentColor: text("accent_color").notNull().default("blue"),
   textSize: text("text_size").notNull().default("medium"),
   assistantName: text("assistant_name").notNull().default("Astraeya"),
   responseStyle: text("response_style").notNull().default("balanced"),
   // "Higher intelligence" — a more capable, more expensive model per request.
   model: text("model").notNull().default("standard"),
-  memoryEnabled: boolean("memory_enabled").notNull().default(false),
+  memoryEnabled: boolean("memory_enabled").notNull().default(true),
   enterToSend: boolean("enter_to_send").notNull().default(true),
   dictationEnabled: boolean("dictation_enabled").notNull().default(true),
   // Browser speech-synthesis voice name for Read Aloud. Null means the
@@ -304,6 +304,10 @@ export const conversations = pgTable(
     // to memory, so the exclusion holds for every future turn too, not just the
     // one where it was switched on.
     excludeFromMemory: boolean("exclude_from_memory").notNull().default(false),
+    // The code sandbox this conversation last made files in. Reused on the
+    // next file request so "make the title blue" can edit the same file.
+    // Sandboxes expire on their own; a stale id is simply replaced.
+    sandboxId: text("sandbox_id"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -399,8 +403,51 @@ export const messages = pgTable("messages", {
     .references(() => conversations.id, { onDelete: "cascade" }),
   role: text("role").notNull(), // user | assistant | system
   content: text("content").notNull(),
+  // Text extracted from documents attached to this message. Kept apart from
+  // `content` so the chat shows what the user typed, while the model (and
+  // conversation recall) still sees the document on every later turn.
+  documentText: text("document_text"),
   createdAt: createdAt(),
-});
+}, (t) => ({
+  conversationIdx: index("messages_conversation_idx").on(t.conversationId),
+  // Full-text search over everything said, for recalling past conversations.
+  contentSearchIdx: index("messages_content_search_idx").using(
+    "gin",
+    sql`to_tsvector('english', ${t.content})`
+  ),
+}));
+
+/**
+ * Files Astraeya made for a user — documents, slides, spreadsheets, charts,
+ * edited images. The bytes live with the AI provider's file store; this row
+ * is what ties a file to its owner, so only they can download it.
+ */
+export const generatedFiles = pgTable(
+  "generated_files",
+  {
+    id: id(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    conversationId: text("conversation_id").references(() => conversations.id, {
+      onDelete: "set null",
+    }),
+    // The reply the file belongs to, so it shows under that reply on reload.
+    // Set once the reply is saved; null while it is still being written.
+    messageId: text("message_id").references(() => messages.id, {
+      onDelete: "set null",
+    }),
+    providerFileId: text("provider_file_id").notNull(),
+    filename: text("filename").notNull(),
+    mediaType: text("media_type").notNull(),
+    sizeBytes: integer("size_bytes"),
+    createdAt: createdAt(),
+  },
+  (t) => ({
+    userIdx: index("generated_files_user_idx").on(t.userId),
+    messageIdx: index("generated_files_message_idx").on(t.messageId),
+  })
+);
 
 export const libraryAssets = pgTable("library_assets", {
   id: id(),

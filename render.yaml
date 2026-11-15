@@ -86,7 +86,7 @@ services:
       - key: JWT_EXPIRES_IN
         value: 30d
       - key: ANTHROPIC_MODEL
-        value: claude-sonnet-4-6
+        value: claude-sonnet-5-5
       - key: LOCAL_MODEL_DIR
         value: /models
       # Set these two in the Render dashboard after the first deploy:

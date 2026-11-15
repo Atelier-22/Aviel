@@ -1,4 +1,5 @@
-import Anthropic from "@anthropic-ai/sdk";
+import Anthropic, { toFile } from "@anthropic-ai/sdk";
+import type { BetaMessageStreamParams } from "@anthropic-ai/sdk/resources/beta/messages/messages";
 import { env } from "../../env";
 import type {
   AIProvider,
@@ -27,6 +28,34 @@ function isSupportedImageType(
   return (SUPPORTED_IMAGE_TYPES as string[]).includes(mediaType);
 }
 
+/** Anthropic's document skills, available in the sandbox when making files. */
+const FILE_SKILLS = ["docx", "pptx", "xlsx", "pdf"];
+
+/**
+ * Every file id the sandbox produced in a response. Searched structurally
+ * rather than by one block shape, so a file from any code-execution result
+ * type is picked up.
+ */
+function collectFileIds(content: unknown): string[] {
+  const ids: string[] = [];
+  const visit = (node: unknown) => {
+    if (Array.isArray(node)) return node.forEach(visit);
+    if (!node || typeof node !== "object") return;
+    const obj = node as Record<string, unknown>;
+    // Uploads the user sent in are not outputs.
+    if (obj.type === "container_upload") return;
+    if (typeof obj.file_id === "string" && String(obj.type ?? "").endsWith("_output")) {
+      ids.push(obj.file_id);
+    }
+    for (const value of Object.values(obj)) visit(value);
+  };
+  visit(content);
+  return ids;
+}
+
+/** Models that accept the server-side refusal fallback. */
+const FALLBACK_MODELS = new Set(["claude-sonnet-5-5", "claude-opus-5-5"]);
+
 export class AnthropicProvider implements AIProvider {
   readonly id = "anthropic";
   // Internal only — used in logs, never sent to the client. Model tiers are
@@ -44,20 +73,29 @@ export class AnthropicProvider implements AIProvider {
     temperature: false,
   };
 
+  // Current generation. The tier ids are what accounts store, so upgrading a
+  // model here moves every account on that tier without a data migration.
   readonly models = [
     {
       id: "standard",
-      modelId: "claude-sonnet-4-6",
+      modelId: "claude-sonnet-5-5",
       label: "Standard",
       description:
-        "Fast and capable, with web search and image understanding. The default.",
+        "Fast and capable, with web search, document reading and image understanding. The default.",
     },
     {
       id: "advanced",
-      modelId: "claude-opus-5",
+      modelId: "claude-opus-5-5",
       label: "Advanced",
       description:
-        "Stronger on hard reasoning, and several times more expensive per message. Web search and images included.",
+        "The strongest for hard reasoning, long research and detailed writing. Costs about twice as much per message.",
+    },
+    {
+      id: "quick",
+      modelId: "claude-haiku-5-5",
+      label: "Quick",
+      description:
+        "The fastest and cheapest, for short questions and quick checks.",
     },
   ];
 
@@ -119,58 +157,243 @@ export class AnthropicProvider implements AIProvider {
           };
         });
 
+      // Prompt caching. The stable account prompt goes in `system`; the notes
+      // written for this message go in a system message after the user's
+      // latest turn. That keeps everything before it — the system prompt and
+      // the whole conversation, documents included — byte-identical between
+      // messages, so it is read from cache: faster to the first word, and
+      // cheaper.
+      const split = options?.stableSystemPrompt !== undefined;
       const systemPrompt =
-        options?.systemPrompt ||
+        (split ? options?.stableSystemPrompt : options?.systemPrompt) ||
         systemMessages.map((m) => m.content).join("\n\n") ||
         undefined;
+      const turnNotes = split ? options?.turnNotes?.trim() : "";
+
+      const requestMessages: Anthropic.Beta.BetaMessageParam[] = [
+        ...(turnMessages as Anthropic.Beta.BetaMessageParam[]),
+      ];
+
+      // ---- File making: the code sandbox and document skills -------------
+      const making = options?.fileMaking;
+      if (making) {
+        yield { type: "status", status: making.uploads.length ? "Reading your files…" : "Getting ready…" };
+        // The user's attachments go into the sandbox, so code can open them:
+        // the photo to edit, the notes to turn into slides, the data to chart.
+        const uploaded = await Promise.all(
+          making.uploads.map(async (f) => {
+            const meta = await client.files.upload({
+              file: await toFile(Buffer.from(f.base64, "base64"), f.name, { type: f.mediaType }),
+            });
+            return { type: "container_upload" as const, file_id: meta.id };
+          })
+        );
+        const last = requestMessages[requestMessages.length - 1];
+        if (uploaded.length > 0 && last?.role === "user") {
+          const existing =
+            typeof last.content === "string"
+              ? [{ type: "text" as const, text: last.content }]
+              : last.content;
+          last.content = [...existing, ...uploaded];
+        }
+      }
+
+      if (turnNotes) requestMessages.push({ role: "system", content: turnNotes });
 
       // Anthropic runs web search server-side: the model issues the queries,
       // reads the results, and cites them, all inside one request. No search
       // API key of our own and no client-side tool loop.
-      const tools = options?.webSearch
-        ? [
-            {
-              type: "web_search_20260209" as const,
-              name: "web_search" as const,
-              max_uses: 5,
-            },
-          ]
+      //
+      // The basic search tool is used on purpose. The newer dynamic-filtering
+      // variant runs code execution behind the scenes to filter results,
+      // which adds noticeable seconds to every searched answer. Three searches
+      // cover nearly every question; more mostly adds waiting.
+      //
+      // Web fetch reads a page whose link is in the conversation — a student
+      // pastes a URL and asks about it. Basic variant, for the same reason.
+      const tools: Anthropic.Beta.BetaToolUnion[] = [
+        ...(options?.webSearch
+          ? [
+              { type: "web_search_20250305" as const, name: "web_search" as const, max_uses: 3 },
+              {
+                type: "web_fetch_20250910" as const,
+                name: "web_fetch" as const,
+                max_uses: 3,
+                max_content_tokens: 30000,
+              },
+            ]
+          : []),
+        ...(making
+          ? [{ type: "code_execution_20260521" as const, name: "code_execution" as const }]
+          : []),
+      ];
+
+      const model = options?.model ?? env.ANTHROPIC_MODEL;
+
+      // When a safety check declines a request on these models, the API can
+      // re-run it on a suitable fallback model inside the same call, so a
+      // student is not left with an empty reply. Haiku has no fallback.
+      const supportsFallback = FALLBACK_MODELS.has(model);
+      const betas = [
+        ...(supportsFallback ? ["server-side-fallback-2026-07-01"] : []),
+        ...(making ? ["code-execution-2025-08-25"] : []),
+      ];
+
+      const container = making
+        ? {
+            ...(making.containerId ? { id: making.containerId } : {}),
+            skills: FILE_SKILLS.map((skill_id) => ({
+              type: "anthropic" as const,
+              skill_id,
+              version: "latest",
+            })),
+          }
         : undefined;
 
-      // `temperature` is deliberately not sent: it is rejected with a 400 on
-      // Sonnet 5 / Opus 5 and the 4.7+ family, so omitting it keeps
-      // ANTHROPIC_MODEL swappable without a code change.
-      const stream = client.messages.stream({
-        model: options?.model ?? env.ANTHROPIC_MODEL,
-        max_tokens: options?.maxTokens ?? 4096,
-        ...(systemPrompt ? { system: systemPrompt } : {}),
-        ...(tools ? { tools } : {}),
-        messages: turnMessages,
-      });
-
       let announcedSearch = false;
+      let announcedWork = false;
+      let wroteText = false;
+      let final: Anthropic.Beta.BetaMessage | null = null;
+      const madeFileIds = new Set<string>();
 
-      for await (const event of stream) {
-        if (
-          event.type === "content_block_delta" &&
-          event.delta.type === "text_delta"
-        ) {
-          yield { type: "text", text: event.delta.text };
-        } else if (
-          event.type === "content_block_start" &&
-          event.content_block.type === "server_tool_use" &&
-          !announcedSearch
-        ) {
-          // Searching adds seconds of silence before any text arrives. Saying
-          // so is the difference between "thinking" and "broken".
-          announcedSearch = true;
-          yield { type: "searching" };
+      // A long job (building a 15-slide deck) can pause partway; the API then
+      // resumes it when the paused turn is sent back. A few rounds at most.
+      for (let round = 0; round < 6; round++) {
+        // `temperature` is deliberately not sent: it is rejected with a 400 on
+        // the current model families. Thinking is left adaptive (the default);
+        // `effort` sets how much of it a reply gets.
+        // Built as one explicitly typed object: spreading many optional
+        // pieces straight into the call makes the type checker expand the
+        // SDK's unions until it runs out of memory.
+        const params: BetaMessageStreamParams = {
+          model,
+          max_tokens: making
+            ? Math.max(options?.maxTokens ?? 0, 32000)
+            : (options?.maxTokens ?? 8192),
+          // Caches up to the last cacheable block, moving forward each turn.
+          cache_control: { type: "ephemeral" },
+          messages: requestMessages,
+        };
+        if (systemPrompt) params.system = systemPrompt;
+        if (tools.length) params.tools = tools;
+        if (container) params.container = container;
+        if (options?.effort) {
+          params.output_config = { effort: making ? "medium" : options.effort };
         }
+        if (betas.length) params.betas = betas;
+        if (supportsFallback) params.fallbacks = "default";
+
+        const stream = client.beta.messages.stream(params);
+
+        for await (const event of stream) {
+          if (
+            event.type === "content_block_delta" &&
+            event.delta.type === "text_delta"
+          ) {
+            wroteText = true;
+            yield { type: "text", text: event.delta.text };
+          } else if (
+            event.type === "content_block_start" &&
+            event.content_block.type === "server_tool_use"
+          ) {
+            const name = event.content_block.name;
+            if ((name === "web_search" || name === "web_fetch") && !announcedSearch) {
+              // Searching adds seconds of silence before any text arrives.
+              // Saying so is the difference between "thinking" and "broken".
+              announcedSearch = true;
+              yield { type: "searching" };
+            } else if (name !== "web_search" && name !== "web_fetch" && !announcedWork) {
+              announcedWork = true;
+              yield { type: "status", status: "Creating your file…" };
+            }
+          }
+        }
+
+        final = await stream.finalMessage();
+
+        if (env.NODE_ENV === "development") {
+          const u = final.usage;
+          console.info(
+            `[anthropic] ${model} in=${u.input_tokens} cache_read=${u.cache_read_input_tokens ?? 0} cache_write=${u.cache_creation_input_tokens ?? 0} out=${u.output_tokens} stop=${final.stop_reason}`
+          );
+        }
+
+        // Hand over each finished file as soon as its round completes.
+        for (const fileId of collectFileIds(final.content)) {
+          if (madeFileIds.has(fileId)) continue;
+          madeFileIds.add(fileId);
+          try {
+            const meta = await client.files.retrieveMetadata(fileId);
+            yield {
+              type: "file",
+              file: {
+                providerFileId: fileId,
+                filename: meta.filename,
+                mediaType: meta.mime_type || "application/octet-stream",
+                sizeBytes: meta.size_bytes ?? null,
+              },
+            };
+          } catch (err) {
+            console.error("Could not read a generated file:", err instanceof Error ? err.message : err);
+          }
+        }
+
+        // No client tools are declared, but the model occasionally calls one
+        // that sounds right ("view", to look at a file) mid-way through
+        // making something. Left alone, the turn ends there with nothing
+        // made. Answering the call with an error that points back to the
+        // sandbox lets it carry on. Bounded by the round limit.
+        // Read through a plain shape: narrowing the SDK's block union here
+        // sends the type checker out of memory.
+        const blocks = final.content as unknown as { type: string; id?: string; name?: string }[];
+        const strayCalls = blocks.filter((b) => b.type === "tool_use" && b.id) as {
+          id: string;
+          name?: string;
+        }[];
+        if (final.stop_reason === "tool_use" && strayCalls.length > 0) {
+          const results = strayCalls.map((call) => ({
+            type: "tool_result" as const,
+            tool_use_id: call.id,
+            is_error: true,
+            content: making
+              ? `There is no "${call.name}" tool. Use code_execution (bash and the file editor inside it) to look at files, run code and save the finished files.`
+              : `There is no "${call.name}" tool. Answer without it.`,
+          }));
+          requestMessages.push(
+            { role: "assistant", content: final.content as unknown as Anthropic.Beta.BetaContentBlockParam[] },
+            { role: "user", content: results as unknown as Anthropic.Beta.BetaContentBlockParam[] }
+          );
+          continue;
+        }
+
+        if (final.stop_reason !== "pause_turn") break;
+        // Resume: send the paused turn back as it is, with no extra message.
+        requestMessages.push({ role: "assistant", content: final.content as Anthropic.Beta.BetaContentBlockParam[] });
+      }
+
+      if (!final) throw new Error("No response from the model");
+
+      if (making && final.container?.id) {
+        yield { type: "container", containerId: final.container.id };
       }
 
       if (options?.webSearch) {
-        const sources = extractSources(await stream.finalMessage());
+        const sources = extractSources(final as unknown as Anthropic.Message);
         if (sources.length > 0) yield { type: "sources", sources };
+      }
+
+      // A declined request returns successfully with no text. Say so, rather
+      // than leaving an empty bubble that looks like a crash.
+      if (final.stop_reason === "refusal" && !wroteText) {
+        yield {
+          type: "text",
+          text: "I can't help with that request. If this is for your studies, try rephrasing it or explaining what you're working on, and I'll do what I can.",
+        };
+      } else if (final.stop_reason === "max_tokens") {
+        yield {
+          type: "text",
+          text: "\n\n_(This reply reached its length limit. Say \"continue\" and I'll pick up where I stopped.)_",
+        };
       }
 
       yield { type: "done" };

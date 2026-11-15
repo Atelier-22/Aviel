@@ -25,6 +25,7 @@ export const FEATURES = [
   "webSearch",
   "localAI",
   "integrations",
+  "fileCreation",
 ] as const;
 
 export type Feature = (typeof FEATURES)[number];
@@ -52,6 +53,8 @@ export const platformConfigSchema = z.object({
     webSearch: true,
     localAI: true,
     integrations: true,
+    // Documents, slides, spreadsheets and charts made in the code sandbox.
+    fileCreation: true,
   }),
 
   limits: z
@@ -59,14 +62,19 @@ export const platformConfigSchema = z.object({
       /** 0 means no ceiling. */
       messagesPerDay: z.number().int().min(0).default(0),
       imageGenerationsPerDay: z.number().int().min(0).default(0),
+      // Each file request runs code in a sandbox, which costs more than a
+      // reply. 0 means no limit.
+      filesPerDay: z.number().int().min(0).default(30),
       imageUploadsPerDay: z.number().int().min(0).default(0),
       voiceMinutesPerDay: z.number().int().min(0).default(0),
-      maxUploadMb: z.number().int().min(1).max(100).default(5),
+      // Documents are read on the server, so this is generous. Images have
+      // their own 5 MB cap in the chat route, because the model limits them.
+      maxUploadMb: z.number().int().min(1).max(100).default(50),
       maxAttachmentsPerMessage: z.number().int().min(1).max(20).default(10),
       maxStorageMb: z.number().int().min(0).default(0),
       maxProjects: z.number().int().min(0).default(0),
       maxMemoryEntries: z.number().int().min(1).max(500).default(60),
-      maxOutputTokens: z.number().int().min(256).max(32000).default(8192),
+      maxOutputTokens: z.number().int().min(256).max(32000).default(16000),
     })
     .default({}),
 
@@ -86,6 +94,12 @@ export const platformConfigSchema = z.object({
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "video/mp4",
+      "video/webm",
+      "video/quicktime",
+      "video/x-matroska",
+      "video/3gpp",
+      "video/x-msvideo",
     ]),
 
   /** What a brand-new account starts with, as a settings patch. */
@@ -93,7 +107,7 @@ export const platformConfigSchema = z.object({
     .object({
       model: z.string().max(80).default("standard"),
       theme: z.enum(["light", "dark", "system", "amoled"]).default("system"),
-      memoryEnabled: z.boolean().default(false),
+      memoryEnabled: z.boolean().default(true),
       autoRouting: z.boolean().default(false),
     })
     .default({}),

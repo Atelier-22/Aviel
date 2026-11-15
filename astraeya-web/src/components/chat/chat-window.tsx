@@ -4,23 +4,27 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowDown,
+  BookOpen,
   Cloud,
   FileText,
   Globe,
+  GraduationCap,
   HardDrive,
   Mic,
   MicOff,
+  PenLine,
   Radio,
   RotateCcw,
+  Search,
   Send,
   Square,
   Trash2,
   X,
 } from "lucide-react";
 import { MessageBubble } from "./message-bubble";
+import type { MadeFile } from "./made-files";
 import { Composer, type ThinkMode } from "./composer";
-import { composerPlaceholder } from "./composer-placeholder";
-import { AstraeyaLockup } from "../logo";
+import { AstraeyaIcon } from "../logo";
 import { useSettingsStore } from "@/lib/settings/store";
 import { apiFetch, apiStream } from "@/lib/api-client";
 import {
@@ -44,6 +48,15 @@ type Message = {
   processedLocally?: boolean;
   routed?: boolean;
   routingReason?: string;
+  /**
+   * False while the id is a temporary one made in the browser. Messages loaded
+   * from the server are stored ones, so it defaults to true when absent.
+   */
+  saved?: boolean;
+  /** Files Astraeya made with this reply. */
+  files?: MadeFile[];
+  /** Progress while the reply is being worked on, e.g. "Creating your file…". */
+  status?: string;
 };
 
 type PendingFile = {
@@ -55,18 +68,29 @@ type PendingFile = {
 
 type Project = { id: string; name: string };
 
-const SUGGESTIONS = [
-  "Explain a concept I'm stuck on",
-  "Help me draft an email",
-  "Review this code and find bugs",
-  "Plan a project step by step",
+// Starting points for what students come here to do. Each fills the box with
+// a prompt to finish, rather than sending on its own.
+const SUGGESTIONS: { label: string; icon: typeof BookOpen; prompt: string }[] = [
+  { label: "Explain a topic", icon: GraduationCap, prompt: "Explain this topic to me simply, then in exam-level detail: " },
+  { label: "Summarise notes", icon: BookOpen, prompt: "Summarise these notes into clear key points I can revise from:\n\n" },
+  { label: "Plan an assignment", icon: PenLine, prompt: "Help me plan and outline this assignment: " },
+  { label: "Research a question", icon: Search, prompt: "Research this question and give me the strongest evidence on each side: " },
 ];
+
+/** "Good morning", "Good afternoon" or "Good evening", by the device's clock. */
+function greeting(name: string | null): string {
+  const h = new Date().getHours();
+  const part = h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+  return name ? `${part}, ${name}` : part;
+}
 
 export function ChatWindow({
   conversationId,
+  title,
   initialMessages = [],
 }: {
   conversationId?: string;
+  title?: string;
   initialMessages?: Message[];
 }) {
   const router = useRouter();
@@ -249,12 +273,12 @@ export function ChatWindow({
   // Accepts a File[] as well as a FileList: a paste and a drop both hand over
   // a plain array, and only a file input gives a FileList.
   function handleFilesSelected(fileList: FileList | File[]) {
-    const maxBytes = (meta?.limits?.maxUploadMb ?? 5) * 1_000_000;
+    const maxBytes = (meta?.limits?.maxUploadMb ?? 50) * 1_000_000;
 
     Array.from(fileList).forEach((file) => {
       if (file.size > maxBytes) {
         setError(
-          `"${file.name}" is larger than the ${meta?.limits?.maxUploadMb ?? 5} MB limit.`
+          `"${file.name}" is larger than the ${meta?.limits?.maxUploadMb ?? 50} MB limit.`
         );
         return;
       }
@@ -320,7 +344,10 @@ export function ChatWindow({
       if (!conv.streamResponses || !settingsRef.current.advanced.streaming) {
         const result = await apiFetch<{
           conversationId: string;
+          userMessageId?: string;
+          assistantMessageId?: string | null;
           reply: string;
+          files?: MadeFile[];
           model?: string;
           processedLocally?: boolean;
           sources?: { title: string; url: string }[];
@@ -332,6 +359,7 @@ export function ChatWindow({
               ? {
                   ...m,
                   content: result.reply,
+                  files: result.files,
                   model: result.model,
                   processedLocally: result.processedLocally,
                 }
@@ -343,6 +371,7 @@ export function ChatWindow({
           processedLocally: result.processedLocally,
         });
         if (result.sources?.length) setSources(result.sources);
+        adoptSavedIds(assistantId, result.userMessageId, result.assistantMessageId);
         afterReply(result.reply);
 
         if (!conversationId && result.conversationId) {
@@ -403,6 +432,18 @@ export function ChatWindow({
             }
           } else if (eventType === "searching") {
             setSearching(true);
+          } else if (eventType === "status") {
+            setMessages((prev) =>
+              prev.map((m) => (m.id === assistantId ? { ...m, status: data.text } : m))
+            );
+          } else if (eventType === "file") {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId
+                  ? { ...m, files: [...(m.files ?? []), data.file as MadeFile] }
+                  : m
+              )
+            );
           } else if (eventType === "sources") {
             setSearching(false);
             setSources(data.sources ?? []);
@@ -418,6 +459,20 @@ export function ChatWindow({
                   : m
               )
             );
+          } else if (eventType === "done") {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId
+                  ? {
+                      ...m,
+                      status: undefined,
+                      // A reply that was only files still needs words.
+                      content: m.content || (m.files?.length ? "Here is your file." : m.content),
+                    }
+                  : m
+              )
+            );
+            adoptSavedIds(assistantId, data.userMessageId, data.assistantMessageId);
           } else if (eventType === "error") {
             setError(data.message);
             setLastFailedMessage(text);
@@ -438,6 +493,44 @@ export function ChatWindow({
       }
     } finally {
       setIsStreaming(false);
+    }
+  }
+
+  /**
+   * Replace the temporary ids of the turn just sent with the ones the server
+   * saved, so actions that point at a stored message — branching — work
+   * straight away. The user's message is the one right before the reply.
+   */
+  function adoptSavedIds(
+    assistantId: string,
+    userMessageId?: string | null,
+    assistantMessageId?: string | null
+  ) {
+    if (!userMessageId && !assistantMessageId) return;
+    setMessages((prev) => {
+      const idx = prev.findIndex((m) => m.id === assistantId);
+      if (idx === -1) return prev;
+      return prev.map((m, i) => {
+        if (i === idx && assistantMessageId) return { ...m, id: assistantMessageId, saved: true };
+        if (i === idx - 1 && m.role === "user" && userMessageId)
+          return { ...m, id: userMessageId, saved: true };
+        return m;
+      });
+    });
+  }
+
+  /** Branch into a new chat holding everything up to and including a message. */
+  async function branchFrom(messageId: string) {
+    if (!conversationId) return;
+    try {
+      const branch = await apiFetch<{ id: string }>(
+        `/conversations/${conversationId}/branch`,
+        { method: "POST", body: JSON.stringify({ messageId }) }
+      );
+      router.push(`/chat/${branch.id}`);
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not branch this chat");
     }
   }
 
@@ -489,6 +582,7 @@ export function ChatWindow({
 
     const userMsg: Message = {
       id: crypto.randomUUID(),
+      saved: false,
       role: "user",
       content:
         text +
@@ -503,7 +597,7 @@ export function ChatWindow({
     setMessages((prev) => [
       ...prev,
       userMsg,
-      { id: assistantId, role: "assistant", content: "", createdAt: new Date() },
+      { id: assistantId, role: "assistant", content: "", createdAt: new Date(), saved: false },
     ]);
 
     await streamReply(text, assistantId, filesToSend, webSearchEnabled);
@@ -523,7 +617,7 @@ export function ChatWindow({
     const assistantId = crypto.randomUUID();
     setMessages((prev) => [
       ...prev,
-      { id: assistantId, role: "assistant", content: "", createdAt: new Date() },
+      { id: assistantId, role: "assistant", content: "", createdAt: new Date(), saved: false },
     ]);
     await streamReply(text, assistantId);
   }
@@ -570,35 +664,61 @@ export function ChatWindow({
     router.refresh();
   }
 
+
   const showProcessing =
     settings.privacy.showProcessingLocation && turnMeta !== null;
-  const showUsage = conv.showUsage && messages.length > 0;
-  // Everything the bar can hold needs a conversation that has started, so this
-  // is the one condition rather than three ORed together.
-  const showHeader = messages.length > 0;
+  const isEmpty = messages.length === 0;
+  const firstName =
+    (settings.profile.preferredName?.trim() ||
+      settings.profile.displayName?.trim() ||
+      "").split(/\s+/)[0] || null;
+  const latestAssistantId = [...messages].reverse().find((m) => m.role === "assistant")?.id;
+
+  // One composer, placed in the middle of a new chat and docked at the bottom
+  // of a conversation — the same element either way.
+  const composer = (
+    <Composer
+      value={input}
+      onChange={setInput}
+      onSend={() => void sendMessage()}
+      onStop={stopGeneration}
+      isStreaming={isStreaming}
+      attachments={pendingFiles}
+      onAttach={handleFilesSelected}
+      onRemoveAttachment={removeFile}
+      webSearchEnabled={webSearchEnabled}
+      onToggleWebSearch={() => setWebSearchEnabled((v) => !v)}
+      selectedProject={selectedProject}
+      onSelectProject={setSelectedProject}
+      showProjectPicker={!conversationId}
+      voiceState={isListening ? "listening" : "idle"}
+      onToggleVoice={toggleListening}
+      interimTranscript={voice.showTranscript ? interim : ""}
+      onCancelVoice={stopListening}
+      micSupported={micSupported}
+      thinkMode={thinkMode}
+      onThinkModeChange={setThinkMode}
+      onOpenLiveVoice={() =>
+        router.push(
+          conversationId ? `/voice?conversation=${conversationId}` : "/voice"
+        )
+      }
+    />
+  );
 
   return (
-    <div className="flex h-full flex-col">
-      {/* The bar carries only what the conversation earns: a usage count if it
-          is switched on, where the answer was processed, and a way to delete.
-          It is not rendered at all when it would hold none of those, so a new
-          chat opens on the conversation rather than on a strip of chrome. */}
-      {showHeader && (
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border-subtle)] px-4 py-2.5 md:px-8">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          {showUsage && (
-            <span className="text-xs text-[var(--text-secondary)]">
-              ·{" "}
-              {messages
-                .reduce((n, m) => n + m.content.length, 0)
-                .toLocaleString()}{" "}
-              characters
-            </span>
-          )}
-
+    <div className="flex h-full flex-col bg-[var(--bg-primary)]">
+      {/* Top bar: the conversation's name, and nothing that competes with it.
+          Deleting, renaming and pinning live in the sidebar's menu for each
+          chat. On a phone, the left padding clears the menu button. */}
+      {!isEmpty && (
+        <header className="flex h-14 shrink-0 items-center gap-3 pl-16 pr-4 md:px-6">
+          <h1 className="min-w-0 flex-1 truncate text-[15px] font-medium text-[var(--text-primary)]">
+            {title && title !== "New Chat" ? title : messages.find((m) => m.role === "user")?.content.slice(0, 60) || "New chat"}
+          </h1>
           {showProcessing && (
             <span
-              className="flex items-center gap-1 rounded-full border border-[var(--border-subtle)] px-2 py-0.5 text-[11px] text-[var(--text-secondary)]"
+              className="flex shrink-0 items-center gap-1 rounded-full border border-[var(--border-subtle)] px-2 py-0.5 text-[11px] text-[var(--text-secondary)]"
               title={
                 turnMeta?.processedLocally
                   ? "Answered by a model running on the Astraeya server. Nothing was sent to an external provider."
@@ -607,7 +727,7 @@ export function ChatWindow({
             >
               {turnMeta?.processedLocally ? (
                 <>
-                  <HardDrive size={11} /> Processed locally
+                  <HardDrive size={11} /> Local
                 </>
               ) : (
                 <>
@@ -616,166 +736,158 @@ export function ChatWindow({
               )}
             </span>
           )}
-        </div>
-
-        <div className="flex items-center gap-1">
-          {messages.length > 0 && (
-            <button
-              onClick={clearConversation}
-              className="focus-ring flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs text-[var(--text-secondary)] hover:bg-[var(--surface-hover)]"
-            >
-              <Trash2 size={13} /> Delete
-            </button>
-          )}
-        </div>
-      </div>
+        </header>
       )}
 
-      <div
-        ref={scrollContainerRef}
-        onScroll={handleScroll}
-        className="flex-1 overflow-y-auto px-4 py-6 md:px-8"
-      >
-        <div className="chat-stack mx-auto flex max-w-3xl flex-col">
-          {messages.length === 0 && (
-            <div className="flex flex-col items-center justify-center pt-16 text-center text-[var(--text-secondary)] sm:pt-24">
-              <AstraeyaLockup height={88} />
-              {/* The lockup already carries the strapline, so the greeting
-                  below it is the only other line — two headings stacked read
-                  as a splash screen rather than a starting point. */}
-              <p className="mt-7 text-lg font-medium text-[var(--text-primary)]">
-                {composerPlaceholder(settings).replace(/…$/, "")}
-              </p>
-              <div className="mt-6 grid w-full max-w-lg gap-2 sm:grid-cols-2">
-                {SUGGESTIONS.map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => {
-                      setInput(s);
-                      textareaRef.current?.focus();
-                    }}
-                    className="hover:border-accent focus-ring rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-secondary)] px-3 py-2.5 text-left text-sm text-[var(--text-primary)] transition-colors"
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+      {isEmpty ? (
+        // ---- New chat: greeting and composer together, centred ----
+        <div className="flex flex-1 flex-col items-center justify-center overflow-y-auto px-4 pb-16">
+          <div className="w-full max-w-[760px]">
+            <h1 className="mb-8 flex items-center justify-center gap-3 text-center font-serif text-[2rem] font-medium leading-tight text-[var(--text-primary)] sm:text-[2.6rem]">
+              <AstraeyaIcon size={40} />
+              {greeting(firstName)}
+            </h1>
 
-          {messages.map((m) => (
-            <MessageBubble
-              key={m.id}
-              id={m.id}
-              role={m.role}
-              content={m.content}
-              timestamp={conv.showTimestamps ? m.createdAt : undefined}
-              conversationId={conversationId}
-              model={conv.showModelUsed ? m.model : undefined}
-              processedLocally={m.processedLocally}
-              routingReason={
-                settings.advanced.developerMode ? m.routingReason : undefined
-              }
-              showTypingIndicator={conv.showTypingIndicator}
-              isStreaming={
-                isStreaming && m.id === messages[messages.length - 1]?.id
-              }
-              onRetry={
-                m.role === "assistant" ? () => regenerateResponse(m.id) : undefined
-              }
-            />
-          ))}
+            {composer}
 
-          {searching && (
-            <div className="flex items-center gap-2 self-start rounded-full border border-[var(--border-subtle)] bg-[var(--bg-secondary)] px-3 py-1.5 text-xs text-[var(--text-secondary)]">
-              <Globe size={12} className="animate-pulse" />
-              Searching the web…
-            </div>
-          )}
-
-          {sources.length > 0 && (
-            <div className="self-start rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-secondary)] px-3 py-2.5">
-              <p className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-[var(--text-secondary)]">
-                <Globe size={11} /> Sources
-              </p>
-              <ul className="flex flex-col gap-1">
-                {sources.map((s) => (
-                  <li key={s.url}>
-                    <a
-                      href={s.url}
-                      target="_blank"
-                      rel="noreferrer noopener"
-                      className="text-accent line-clamp-1 text-xs hover:underline"
-                    >
-                      {s.title}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {error && (
-            <div
-              role="alert"
-              className="flex items-center justify-between gap-3 rounded-xl border border-astraeya-red-500/30 bg-astraeya-red-500/10 px-4 py-2.5 text-sm text-astraeya-red-500"
-            >
-              <span>{error}</span>
-              {lastFailedMessage && (
+            <div className="mt-4 flex flex-wrap justify-center gap-2">
+              {SUGGESTIONS.map(({ label, icon: Icon, prompt }) => (
                 <button
-                  onClick={retryLastMessage}
-                  className="focus-ring flex shrink-0 items-center gap-1 rounded-md border border-astraeya-red-500/40 px-2 py-1 text-xs hover:bg-astraeya-red-500/10"
+                  key={label}
+                  onClick={() => {
+                    setInput(prompt);
+                    textareaRef.current?.focus();
+                  }}
+                  className="focus-ring flex items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-secondary)] px-3 py-2 text-sm text-[var(--text-secondary)] transition-colors hover:border-[var(--accent-solid)] hover:text-[var(--text-primary)]"
                 >
-                  <RotateCcw size={12} /> Retry
+                  <Icon size={15} />
+                  {label}
                 </button>
-              )}
+              ))}
             </div>
-          )}
-          <div ref={scrollRef} />
+
+            {error && (
+              <p role="alert" className="mt-4 text-center text-sm text-[var(--danger)]">
+                {error}
+              </p>
+            )}
+          </div>
         </div>
-      </div>
-
-      <div className="relative border-t border-[var(--border-subtle)] px-4 py-4 md:px-8">
-        {!pinnedToBottom && messages.length > 0 && (
-          <button
-            onClick={() => {
-              setPinnedToBottom(true);
-              scrollRef.current?.scrollIntoView({ behavior: "smooth" });
-            }}
-            className="av-btn av-btn--default absolute -top-11 left-1/2 h-8 -translate-x-1/2 px-3 text-xs shadow-[var(--e-2)]"
+      ) : (
+        <>
+          <div
+            ref={scrollContainerRef}
+            onScroll={handleScroll}
+            className="flex-1 overflow-y-auto px-4 pb-8 pt-2 md:px-8"
           >
-            <ArrowDown size={13} /> Jump to latest
-          </button>
-        )}
+            <div className="chat-stack mx-auto flex max-w-[760px] flex-col">
+              {messages.map((m) => (
+                <MessageBubble
+                  key={m.id}
+                  id={m.id}
+                  role={m.role}
+                  content={m.content}
+                  timestamp={conv.showTimestamps ? m.createdAt : undefined}
+                  conversationId={conversationId}
+                  model={conv.showModelUsed ? m.model : undefined}
+                  processedLocally={m.processedLocally}
+                  routingReason={
+                    settings.advanced.developerMode ? m.routingReason : undefined
+                  }
+                  showTypingIndicator={conv.showTypingIndicator}
+                  isStreaming={
+                    isStreaming && m.id === messages[messages.length - 1]?.id
+                  }
+                  isLatest={m.id === latestAssistantId}
+                  files={m.files}
+                  status={m.status}
+                  onRetry={
+                    m.role === "assistant" ? () => regenerateResponse(m.id) : undefined
+                  }
+                  onBranch={
+                    // Only a stored message can be branched from; a just-sent one
+                    // gets its real id when the reply finishes.
+                    conversationId && m.saved !== false && !isStreaming
+                      ? () => branchFrom(m.id)
+                      : undefined
+                  }
+                />
+              ))}
 
-        <Composer
-          value={input}
-          onChange={setInput}
-          onSend={() => void sendMessage()}
-          onStop={stopGeneration}
-          isStreaming={isStreaming}
-          attachments={pendingFiles}
-          onAttach={handleFilesSelected}
-          onRemoveAttachment={removeFile}
-          webSearchEnabled={webSearchEnabled}
-          onToggleWebSearch={() => setWebSearchEnabled((v) => !v)}
-          selectedProject={selectedProject}
-          onSelectProject={setSelectedProject}
-          showProjectPicker={!conversationId}
-          voiceState={isListening ? "listening" : "idle"}
-          onToggleVoice={toggleListening}
-          interimTranscript={voice.showTranscript ? interim : ""}
-          onCancelVoice={stopListening}
-          micSupported={micSupported}
-          thinkMode={thinkMode}
-          onThinkModeChange={setThinkMode}
-          onOpenLiveVoice={() =>
-            router.push(
-              conversationId ? `/voice?conversation=${conversationId}` : "/voice"
-            )
-          }
-        />
-      </div>
+              {searching && (
+                <div className="flex items-center gap-2 self-start text-sm text-[var(--text-secondary)]">
+                  <Globe size={14} className="animate-pulse" />
+                  Searching the web…
+                </div>
+              )}
+
+              {/* Only for accounts that asked for sources in Settings. */}
+              {settings.behavior.citeSources && sources.length > 0 && (
+                <div className="self-start rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-secondary)] px-3 py-2.5">
+                  <p className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-[var(--text-secondary)]">
+                    <Globe size={11} /> Sources
+                  </p>
+                  <ul className="flex flex-col gap-1">
+                    {sources.map((s) => (
+                      <li key={s.url}>
+                        <a
+                          href={s.url}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                          className="text-accent line-clamp-1 text-xs hover:underline"
+                        >
+                          {s.title}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {error && (
+                <div
+                  role="alert"
+                  className="flex items-center justify-between gap-3 rounded-xl border border-[var(--danger)]/30 bg-[var(--danger)]/10 px-4 py-2.5 text-sm text-[var(--danger)]"
+                >
+                  <span>{error}</span>
+                  {lastFailedMessage && (
+                    <button
+                      onClick={retryLastMessage}
+                      className="focus-ring flex shrink-0 items-center gap-1 rounded-md border border-[var(--danger)]/40 px-2 py-1 text-xs hover:bg-[var(--danger)]/10"
+                    >
+                      <RotateCcw size={12} /> Retry
+                    </button>
+                  )}
+                </div>
+              )}
+              <div ref={scrollRef} />
+            </div>
+          </div>
+
+          {/* Docked composer. No band or divider: the conversation fades out
+              beneath it, so the box floats on the page. */}
+          <div className="composer-dock relative px-4 pb-3 md:px-8">
+            {!pinnedToBottom && (
+              <button
+                onClick={() => {
+                  setPinnedToBottom(true);
+                  scrollRef.current?.scrollIntoView({ behavior: "smooth" });
+                }}
+                aria-label="Jump to latest"
+                className="absolute -top-12 left-1/2 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full border border-[var(--border-subtle)] bg-[var(--bg-secondary)] text-[var(--text-secondary)] shadow-md hover:text-[var(--text-primary)]"
+              >
+                <ArrowDown size={16} />
+              </button>
+            )}
+            <div className="mx-auto max-w-[760px]">
+              {composer}
+              <p className="mt-2 text-center text-[11.5px] text-[var(--text-secondary)]">
+                Astraeya can make mistakes. Check important information.
+              </p>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
