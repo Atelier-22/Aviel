@@ -42,11 +42,16 @@ import soundfile as sf
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import Response
 from kokoro_onnx import Kokoro
-from piper import PiperVoice, SynthesisConfig
+try:
+    from piper import PiperVoice, SynthesisConfig
+except ImportError:  # the cloud build (Vercel) carries Kokoro only
+    PiperVoice = SynthesisConfig = None  # type: ignore[assignment,misc]
 from pydantic import BaseModel, Field
 
 HERE = Path(__file__).resolve().parent
-MODELS = Path(os.environ.get("VOICE_MODELS_DIR", HERE.parent / "voices")).resolve()
+# A relative VOICE_MODELS_DIR is taken from this file's folder, so it works
+# wherever the server is started from (a serverless host picks its own).
+MODELS = (HERE / os.environ.get("VOICE_MODELS_DIR", str(HERE.parent / "voices"))).resolve()
 # Measured on a 4-core laptop (i5-8350U), Heart's first 24 characters: 2.09 s
 # on 1 thread, 1.35 s on 4, 1.78 s on 8; two pieces at once on 4 threads each
 # took 4.5 s apiece. So each piece gets several threads and pieces are made
@@ -65,6 +70,8 @@ KOKORO_MODEL = os.environ.get("VOICE_KOKORO_MODEL", "kokoro-v1.0.onnx")
 DEVICE = os.environ.get("VOICE_DEVICE", "cpu").lower()
 STT_MODEL = os.environ.get("VOICE_STT_MODEL", "base.en")
 STT_ONLY = os.environ.get("VOICE_STT_ONLY") == "1"
+# Leave speech-to-text out (the cloud build, where Whisper doesn't fit).
+SKIP_STT = os.environ.get("VOICE_SKIP_STT") == "1"
 STT_DIR = Path(os.environ.get("VOICE_STT_DIR", HERE / "models" / "whisper")).resolve()
 
 
@@ -133,6 +140,8 @@ class Engines:
         self.phonemize_lock = threading.Lock()
         self.piper_lock = threading.Lock()
         self.load_lock = threading.Lock()
+        # Separate from load_lock, which load() itself takes for Piper voices.
+        self.init_lock = threading.Lock()
 
     def load(self) -> None:
         started = time.perf_counter()
@@ -147,7 +156,8 @@ class Engines:
             if voice_id in VOICES and VOICES[voice_id]["engine"] == "piper":
                 self.piper_voice(voice_id)
                 list(self.piper[voice_id].synthesize("Ready."))
-        self.load_whisper()
+        if not SKIP_STT:
+            self.load_whisper()
         print(f"[voice] Kokoro ({KOKORO_MODEL}) and {len(PRELOAD)} Piper voice(s) ready in {time.perf_counter() - started:.1f}s, {WORKERS} parallel x {THREADS} thread(s) on {providers()[0]}, models in {MODELS}", flush=True)
 
     def load_whisper(self) -> None:
@@ -166,7 +176,17 @@ class Engines:
         except Exception as err:  # noqa: BLE001 - reported, not fatal
             print(f"[voice] speech-to-text unavailable: {err}", flush=True)
 
+    def ensure_loaded(self) -> None:
+        """Loads the models on first use, for hosts that skip FastAPI's startup
+        hook (serverless). Elsewhere the startup hook has already done it."""
+        if self.kokoro is None and not STT_ONLY:
+            with self.init_lock:
+                if self.kokoro is None:
+                    self.load()
+
     def piper_voice(self, voice_id: str) -> PiperVoice:
+        if PiperVoice is None:
+            raise FileNotFoundError("Piper is not installed here")
         with self.load_lock:
             if voice_id not in self.piper:
                 gender = VOICES[voice_id]["gender"]
@@ -181,6 +201,7 @@ class Engines:
         meta = VOICES[voice_id]
         text = apply_pronunciations(text)
         if meta["engine"] == "kokoro":
+            self.ensure_loaded()
             if self.kokoro is None:
                 raise RuntimeError("Kokoro is not loaded")
             lang = "en-gb" if voice_id.startswith("b") else "en-us"
@@ -295,6 +316,7 @@ def voices(x_voice_secret: str | None = Header(default=None)) -> dict:
 
 @app.get("/health")
 def health() -> dict:
+    engines.ensure_loaded()
     if engines.kokoro is None and not (STT_ONLY and engines.whisper is not None):
         raise HTTPException(status_code=503, detail="loading")
     return {

@@ -1,0 +1,9 @@
+# The cloud build: Kokoro only. Piper and Whisper are left out to stay under
+# Vercel's 500 MB function limit; the API falls back for those.
+kokoro-onnx==0.4.7
+onnxruntime==1.32.0
+numpy>=2.2
+soundfile>=0.13
+espeakng-loader==0.2.4
+phonemizer-fork==3.3.1
+fastapi==0.124.0
