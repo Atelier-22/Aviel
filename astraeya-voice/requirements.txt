@@ -9,3 +9,5 @@ phonemizer-fork==3.3.1
 piper-tts==1.8.0
 fastapi==0.124.0
 uvicorn==0.38.0
+# Speech to text for Astra Assist
+faster-whisper==1.2.1

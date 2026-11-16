@@ -140,6 +140,37 @@ export function preview(voiceId: string): Promise<Speech> {
 }
 
 // ---------------------------------------------------------------------------
+// Speech to text (Whisper, on the same voice server)
+// ---------------------------------------------------------------------------
+
+export interface Transcript {
+  text: string;
+  seconds: number;
+}
+
+/** WAV audio in, the words out. */
+export async function transcribe(wav: Buffer): Promise<Transcript> {
+  let res: Response;
+  try {
+    res = await fetch(`${baseUrl()}/transcribe`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "audio/wav",
+        ...(env.VOICE_SECRET ? { "X-Voice-Secret": env.VOICE_SECRET } : {}),
+      },
+      body: new Uint8Array(wav),
+      signal: AbortSignal.timeout(60_000),
+    });
+  } catch {
+    markDown();
+    throw new VoiceUnavailable("The speech service could not be reached.");
+  }
+  if (!res.ok) throw new VoiceUnavailable(`The speech service refused the audio (${res.status}).`);
+  const body = (await res.json()) as { text?: string; seconds?: number };
+  return { text: (body.text ?? "").trim(), seconds: body.seconds ?? 0 };
+}
+
+// ---------------------------------------------------------------------------
 // Health
 // ---------------------------------------------------------------------------
 

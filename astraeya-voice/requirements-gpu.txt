@@ -8,3 +8,4 @@ piper-tts==1.8.0
 fastapi==0.124.0
 uvicorn==0.38.0
 onnxruntime-gpu==1.32.0
+faster-whisper==1.2.1

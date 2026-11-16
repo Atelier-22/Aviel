@@ -1,4 +1,4 @@
-import { Router } from "express";
+import express, { Router } from "express";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { requireAuth, asyncHandler } from "../auth/middleware";
@@ -13,6 +13,7 @@ import {
   preview,
   synthesize,
   takeVoiceAllowance,
+  transcribe,
   voiceServiceUp,
   warm,
 } from "../voice/voice.service";
@@ -212,5 +213,37 @@ voiceRouter.post(
       }
     }
     res.end();
+  })
+);
+
+/**
+ * What the person said, as text: a WAV recording in, Whisper's words out.
+ * Used by Astra Assist, where the browser's own recognition is not available.
+ */
+voiceRouter.post(
+  "/transcribe",
+  express.raw({ type: ["audio/wav", "audio/x-wav", "application/octet-stream"], limit: "25mb" }),
+  asyncHandler(async (req, res) => {
+    if (!(await voiceAllowed(res))) return;
+    const audio = req.body as Buffer;
+    if (!Buffer.isBuffer(audio) || audio.length < 1000) {
+      res.status(400).json({ error: "Send the recording as WAV audio." });
+      return;
+    }
+    // About 32 KB per second of 16 kHz mono audio; counted like characters.
+    const limited = takeVoiceAllowance(req.userId!, Math.ceil(audio.length / 2000));
+    if (limited) {
+      res.status(429).json({ error: limited });
+      return;
+    }
+    try {
+      res.json(await transcribe(audio));
+    } catch (err) {
+      if (err instanceof VoiceUnavailable) {
+        res.status(503).json({ error: "Speech recognition isn't available right now." });
+        return;
+      }
+      throw err;
+    }
   })
 );

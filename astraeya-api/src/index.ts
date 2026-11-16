@@ -22,6 +22,7 @@ import { systemRouter } from "./routes/system.routes";
 import { filesRouter, shareRouter } from "./routes/files.routes";
 import { mediaRouter } from "./routes/media.routes";
 import { voiceRouter } from "./routes/voice.routes";
+import { assistRouter } from "./routes/assist.routes";
 import { startVoiceProbe } from "./voice/voice.service";
 import { startMediaWorker } from "./services/media.service";
 import {
@@ -89,6 +90,7 @@ app.use("/files", filesRouter);
 app.use("/share", shareRouter);
 app.use("/media", mediaRouter);
 app.use("/voice", voiceRouter);
+app.use("/assist", assistRouter);
 app.use("/library", libraryRouter);
 app.use("/usage", usageRouter);
 app.use("/feedback", feedbackRouter);

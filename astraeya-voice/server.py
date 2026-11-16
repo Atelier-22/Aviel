@@ -19,6 +19,8 @@ Settings (environment):
     VOICE_SECRET      shared secret expected in X-Voice-Secret (unset = no check, for local use)
     VOICE_KOKORO_MODEL  kokoro-v1.0.onnx (default) or kokoro-v1.0.fp16.onnx (faster on CPU)
     VOICE_DEVICE      cpu (default) or cuda (NVIDIA GPU, with onnxruntime-gpu)
+    VOICE_STT_MODEL   Whisper model for /transcribe: base.en (default) or small.en (better, slower)
+    VOICE_STT_DIR     where Whisper models are kept (default ./models/whisper)
     PORT              default 5005
 """
 
@@ -36,7 +38,7 @@ from pathlib import Path
 import numpy as np
 import onnxruntime as ort
 import soundfile as sf
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import Response
 from kokoro_onnx import Kokoro
 from piper import PiperVoice, SynthesisConfig
@@ -56,6 +58,8 @@ KOKORO_MODEL = os.environ.get("VOICE_KOKORO_MODEL", "kokoro-v1.0.onnx")
 # falling back to the CPU if no GPU is usable. On a GPU, Heart is made many
 # times faster than it plays, so speech starts at once and never pauses.
 DEVICE = os.environ.get("VOICE_DEVICE", "cpu").lower()
+STT_MODEL = os.environ.get("VOICE_STT_MODEL", "base.en")
+STT_DIR = Path(os.environ.get("VOICE_STT_DIR", HERE / "models" / "whisper")).resolve()
 
 
 def providers() -> list:
@@ -117,6 +121,7 @@ class Engines:
 
     def __init__(self) -> None:
         self.kokoro: Kokoro | None = None
+        self.whisper = None
         self.piper: dict[str, PiperVoice] = {}
         self.slots = threading.BoundedSemaphore(WORKERS)
         self.phonemize_lock = threading.Lock()
@@ -132,6 +137,20 @@ class Engines:
             if voice_id in VOICES and VOICES[voice_id]["engine"] == "piper":
                 self.piper_voice(voice_id)
                 list(self.piper[voice_id].synthesize("Ready."))
+        # Speech to text for Astra Assist. Loaded after the voices; a failure
+        # here leaves speaking working and only /transcribe unavailable.
+        try:
+            from faster_whisper import WhisperModel
+
+            self.whisper = WhisperModel(
+                STT_MODEL,
+                device="cuda" if providers()[0] == "CUDAExecutionProvider" else "cpu",
+                compute_type="int8",
+                cpu_threads=max(1, (os.cpu_count() or 2) // 2),
+                download_root=str(STT_DIR),
+            )
+        except Exception as err:  # noqa: BLE001 - reported, not fatal
+            print(f"[voice] speech-to-text unavailable: {err}", flush=True)
         print(f"[voice] Kokoro ({KOKORO_MODEL}) and {len(PRELOAD)} Piper voice(s) ready in {time.perf_counter() - started:.1f}s, {WORKERS} parallel x {THREADS} thread(s) on {providers()[0]}, models in {MODELS}", flush=True)
 
     def piper_voice(self, voice_id: str) -> PiperVoice:
@@ -220,6 +239,37 @@ def synthesize(req: SynthesisRequest, x_voice_secret: str | None = Header(defaul
     )
 
 
+@app.post("/transcribe")
+async def transcribe(request: Request, x_voice_secret: str | None = Header(default=None)) -> dict:
+    """16 kHz mono WAV in (any WAV is accepted and resampled), text out."""
+    check_secret(x_voice_secret)
+    if engines.whisper is None:
+        raise HTTPException(status_code=503, detail="speech-to-text is not available")
+    body = await request.body()
+    if not body or len(body) > 25_000_000:
+        raise HTTPException(status_code=413, detail="audio missing or too long")
+    try:
+        audio, rate = sf.read(io.BytesIO(body), dtype="float32")
+    except Exception:
+        raise HTTPException(status_code=415, detail="send WAV audio")
+    if audio.ndim > 1:
+        audio = audio.mean(axis=1)
+    if rate != 16000:
+        n = int(len(audio) * 16000 / rate)
+        audio = np.interp(np.linspace(0, len(audio) - 1, n), np.arange(len(audio)), audio).astype(np.float32)
+    started = time.perf_counter()
+
+    def run() -> str:
+        with engines.slots:
+            segments, _ = engines.whisper.transcribe(audio, language="en", beam_size=1, vad_filter=True)
+            return " ".join(seg.text.strip() for seg in segments).strip()
+
+    import anyio
+
+    text = await anyio.to_thread.run_sync(run)
+    return {"text": text, "seconds": round(len(audio) / 16000, 2), "ms": round((time.perf_counter() - started) * 1000)}
+
+
 @app.get("/voices")
 def voices(x_voice_secret: str | None = Header(default=None)) -> dict:
     check_secret(x_voice_secret)
@@ -230,7 +280,13 @@ def voices(x_voice_secret: str | None = Header(default=None)) -> dict:
 def health() -> dict:
     if engines.kokoro is None:
         raise HTTPException(status_code=503, detail="loading")
-    return {"status": "ok", "workers": WORKERS, "threads": THREADS, "piperLoaded": sorted(engines.piper)}
+    return {
+        "status": "ok",
+        "workers": WORKERS,
+        "threads": THREADS,
+        "piperLoaded": sorted(engines.piper),
+        "speechToText": STT_MODEL if engines.whisper is not None else None,
+    }
 
 
 if __name__ == "__main__":
