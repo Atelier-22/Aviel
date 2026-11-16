@@ -76,6 +76,8 @@ async function heard(wav) {
   if (busy || document.body.dataset.state === "speaking") return;
   busy = true;
   setState("thinking");
+  // The screenshot is taken while the words are being worked out, not after.
+  const shotPromise = window.assist.capture().catch(() => null);
   try {
     const res = await fetch(`${config.apiUrl}/voice/transcribe`, {
       method: "POST",
@@ -88,13 +90,17 @@ async function heard(wav) {
       setState("listening");
       return;
     }
-    if (/^(stop|turn (yourself )?off|goodbye|that'?s all)\b/i.test(question)) {
+    // "Turn it off", "switch off", "stop listening", "goodbye", "that's all"...
+    if (
+      /^(please\s+)?(stop( listening)?|turn (it |yourself |astra )?off|switch (it )?off|shut (it )?(down|off)|close|go away|goodbye|bye( bye)?|that'?s all|that'?s it|you can go)\b/i.test(question) ||
+      /\b(turn|switch) (it|yourself) off\b/i.test(question)
+    ) {
       caption({ you: question, say: "Okay, turning off.", note: "" });
       window.assist.turnOff();
       return;
     }
     caption({ you: question, say: "", note: "" });
-    await ask(question);
+    await ask(question, await shotPromise);
   } catch {
     caption({ say: "", note: "I couldn't reach Astraeya. Check your connection." });
     setState("listening");
@@ -103,8 +109,8 @@ async function heard(wav) {
   }
 }
 
-async function ask(question) {
-  const shot = await window.assist.capture();
+async function ask(question, captured) {
+  const shot = captured === undefined ? await window.assist.capture() : captured;
   caption({ note: shot ? "Looking at your screen…" : "" });
   voice = new Voice({
     apiUrl: config.apiUrl,

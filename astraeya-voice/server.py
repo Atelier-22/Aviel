@@ -270,7 +270,11 @@ async def transcribe(request: Request, x_voice_secret: str | None = Header(defau
 
     def run() -> str:
         with engines.slots:
-            segments, _ = engines.whisper.transcribe(audio, language="en", beam_size=1, vad_filter=True)
+            # The app already trims silence, so Whisper's own filter and
+            # timestamps are skipped: the same words, a little sooner.
+            segments, _ = engines.whisper.transcribe(
+                audio, language="en", beam_size=1, vad_filter=False, without_timestamps=True, condition_on_previous_text=False
+            )
             return " ".join(seg.text.strip() for seg in segments).strip()
 
     import anyio

@@ -107,8 +107,8 @@ class Listener {
       chunks.push(data);
       quietMs = rms > threshold * 0.8 ? 0 : quietMs + frameMs;
       const length = chunks.length * frameMs;
-      // A pause of 0.7 s ends the turn; 30 s is the most one turn can be.
-      if (quietMs >= 700 || length > 30000) {
+      // A pause of 0.55 s ends the turn; 30 s is the most one turn can be.
+      if (quietMs >= 550 || length > 30000) {
         speaking = false;
         loudMs = 0;
         const total = chunks.reduce((n, c) => n + c.length, 0);
@@ -170,10 +170,37 @@ class Voice {
     this.pending++;
     const first = this.first;
     this.first = false;
-    const audio = this.fetch(text, first);
-    this.chain = this.chain.then(async () => {
-      for (const buffer of await audio) this.play(buffer);
-    }).finally(() => { this.pending--; this.maybeEnd(); });
+    // Each sentence's pieces are played the moment they arrive, in order;
+    // at most two sentences are being made at once so the first is not
+    // slowed down by the ones after it.
+    const pieces = [];
+    let finished = false;
+    let wake = null;
+    const push = (item) => { pieces.push(item); wake?.(); };
+    const done = () => { finished = true; wake?.(); };
+    this.slot().then(() => this.stream(text, first, push).finally(() => { this.release(); done(); }));
+    this.chain = this.chain
+      .then(async () => {
+        for (;;) {
+          if (pieces.length) { this.play(pieces.shift()); continue; }
+          if (finished || this.stopped) break;
+          await new Promise((r) => (wake = r));
+          wake = null;
+        }
+      })
+      .finally(() => { this.pending--; this.maybeEnd(); });
+  }
+
+  slot() {
+    this.inFlight = this.inFlight || 0;
+    this.waiting = this.waiting || [];
+    if (this.inFlight < 2) { this.inFlight++; return Promise.resolve(); }
+    return new Promise((r) => this.waiting.push(() => { this.inFlight++; r(); }));
+  }
+
+  release() {
+    this.inFlight--;
+    this.waiting.shift()?.();
   }
 
   end() { this.ended = true; this.maybeEnd(); }
@@ -185,33 +212,44 @@ class Voice {
     speechSynthesis.cancel();
   }
 
-  async fetch(text, first) {
+  /** Reads the speech frames as they stream in and hands each one over at once. */
+  async stream(text, first, push) {
+    if (this.stopped) return;
     try {
       const res = await fetch(`${this.apiUrl}/voice/speak`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${this.token}` },
         body: JSON.stringify({ text, voice: this.voice, first }),
       });
-      if (!res.ok) throw new Error(String(res.status));
-      const bytes = new Uint8Array(await res.arrayBuffer());
-      const buffers = [];
-      let o = 0;
-      const view = new DataView(bytes.buffer);
-      while (o + 8 <= bytes.length) {
-        const hl = view.getUint32(o);
-        const header = JSON.parse(new TextDecoder().decode(bytes.subarray(o + 4, o + 4 + hl)));
-        const al = view.getUint32(o + 4 + hl);
-        const wav = bytes.slice(o + 8 + hl, o + 8 + hl + al);
-        o += 8 + hl + al;
-        if (header.error || !al) throw new Error("voice unavailable");
-        const buffer = await this.ctx.decodeAudioData(wav.buffer);
-        buffer.pause = header.pause ?? 0.2;
-        buffers.push(buffer);
+      if (!res.ok || !res.body) throw new Error(String(res.status));
+      const reader = res.body.getReader();
+      let buf = new Uint8Array(0);
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done || this.stopped) break;
+        const merged = new Uint8Array(buf.length + value.length);
+        merged.set(buf);
+        merged.set(value, buf.length);
+        buf = merged;
+        for (;;) {
+          if (buf.length < 8) break;
+          const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+          const hl = view.getUint32(0);
+          if (buf.length < 8 + hl) break;
+          const al = view.getUint32(4 + hl);
+          if (buf.length < 8 + hl + al) break;
+          const header = JSON.parse(new TextDecoder().decode(buf.subarray(4, 4 + hl)));
+          const wav = buf.slice(8 + hl, 8 + hl + al);
+          buf = buf.slice(8 + hl + al);
+          if (header.error || !al) throw new Error("voice unavailable");
+          const buffer = await this.ctx.decodeAudioData(wav.buffer);
+          buffer.pause = header.pause ?? 0.2;
+          push(buffer);
+        }
       }
-      return buffers;
     } catch {
       // Backup: the system voice, so the answer is still heard.
-      return [{ fallback: text }];
+      push({ fallback: text });
     }
   }
 

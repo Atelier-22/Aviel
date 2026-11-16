@@ -24,13 +24,20 @@ const fs = require("node:fs");
 
 const HOTKEYS = ["Super+Control+A", "Control+Alt+A"];
 /** Longest side of the screenshot sent to the model; larger only costs time. */
-const MAX_SHOT = 1568;
+const MAX_SHOT = 1366;
+
+// The windows are tiny and mostly transparent. Compositing them on the GPU
+// cost over a gigabyte of memory and kept Windows redrawing the screen;
+// drawing them in software costs almost nothing.
+app.disableHardwareAcceleration();
 
 let tray = null;
 let setupWin = null;
 let bubbleWin = null;
 let pointerWin = null;
 let followTimer = null;
+let pointerTimer = null;
+let lastCursor = { x: -1, y: -1 };
 let active = false;
 let hotkey = null;
 
@@ -132,9 +139,13 @@ function createPointer() {
 }
 
 /** The bubble sits just below and to the right of the cursor, kept on screen. */
-function follow() {
+function follow(force = false) {
   if (!bubbleWin || bubbleWin.isDestroyed()) return;
   const p = screen.getCursorScreenPoint();
+  // Only when the cursor has actually moved: moving a window for nothing
+  // makes Windows redraw it.
+  if (!force && p.x === lastCursor.x && p.y === lastCursor.y) return;
+  lastCursor = p;
   const { workArea } = screen.getDisplayNearestPoint(p);
   const [w, h] = bubbleWin.getSize();
   let x = p.x + 22;
@@ -155,15 +166,16 @@ function setActive(on) {
   }
   active = on;
   if (on) {
-    follow();
+    follow(true);
     bubbleWin.showInactive();
-    followTimer = setInterval(follow, 16);
+    followTimer = setInterval(follow, 33);
     bubbleWin.webContents.send("assist:start");
   } else {
     clearInterval(followTimer);
     followTimer = null;
     bubbleWin.webContents.send("assist:stop");
     bubbleWin.hide();
+    clearTimeout(pointerTimer);
     pointerWin?.hide();
   }
   updateTray();
@@ -236,7 +248,7 @@ ipcMain.handle("assist:capture", async () => {
   const shot = image.getSize();
   return {
     mediaType: "image/jpeg",
-    base64: image.toJPEG(82).toString("base64"),
+    base64: image.toJPEG(75).toString("base64"),
     width: shot.width,
     height: shot.height,
     cursor: {
@@ -257,6 +269,9 @@ ipcMain.on("assist:point", (_e, { x, y, label, shot }) => {
   pointerWin.setBounds(b);
   pointerWin.showInactive();
   pointerWin.webContents.send("pointer:show", { x: sx - b.x, y: sy - b.y, label });
+  // The full-screen layer is hidden again as soon as the marker has faded.
+  clearTimeout(pointerTimer);
+  pointerTimer = setTimeout(() => pointerWin?.hide(), 6500);
 });
 
 ipcMain.on("assist:clipboard", (_e, text) => {
@@ -274,10 +289,17 @@ ipcMain.on("assist:off", () => setActive(false));
 // Start-up
 // ---------------------------------------------------------------------------
 
-if (!app.requestSingleInstanceLock()) {
+// Automated tests run as a separate copy with their own settings, so they
+// never touch (or are blocked by) the installed app.
+const TESTING = Boolean(process.env.ASTRA_ASSIST_TEST);
+if (TESTING) app.setPath("userData", `${app.getPath("userData")}-test`);
+
+if (!TESTING && !app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on("second-instance", () => openSetup());
+  // Starting it again with --quit closes the running copy (used by the
+  // installer when updating); otherwise it opens the settings.
+  app.on("second-instance", (_e, argv) => (argv.includes("--quit") ? app.quit() : openSetup()));
 
   app.whenReady().then(() => {
     app.setAppUserModelId("com.wezitech.astraassist");
