@@ -1,5 +1,6 @@
 "use client";
 
+import { AstraeyaMark } from "@/components/logo";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Cloud, HardDrive } from "lucide-react";
@@ -87,25 +88,16 @@ export function MessageBubble({
           // Making a file takes longer than a reply. Saying what is happening
           // is the difference between "working" and "stuck".
           <span className="flex items-center gap-2 py-1 text-sm text-[var(--text-secondary)]" role="status">
-            <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--text-secondary)] border-t-transparent" />
+            <AstraeyaMark size={18} thinking />
             {status}
           </span>
         ) : !content ? (
           showTypingIndicator ? (
             // Waiting on the first token. A static ellipsis is indistinguishable
             // from a stalled request; movement says the connection is alive.
-            <span
-              className="flex items-center gap-1 py-1"
-              role="status"
-              aria-label="Astraeya is typing"
-            >
-              {[0, 1, 2].map((i) => (
-                <span
-                  key={i}
-                  className="h-1.5 w-1.5 animate-bounce rounded-full bg-[var(--text-secondary)]"
-                  style={{ animationDelay: `${i * 0.15}s` }}
-                />
-              ))}
+            <span className="flex items-center py-1" role="status">
+              {/* The logo's blue ring orbits while Astraeya thinks. */}
+              <AstraeyaMark size={26} thinking />
             </span>
           ) : (
             <span className="sr-only" role="status">
@@ -173,7 +165,7 @@ export function MessageBubble({
 
       {!isUser && status && isStreaming && content && (
         <span className="mt-2 flex items-center gap-2 text-sm text-[var(--text-secondary)]" role="status">
-          <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--text-secondary)] border-t-transparent" />
+          <AstraeyaMark size={18} thinking />
           {status}
         </span>
       )}
@@ -203,6 +195,9 @@ export function MessageBubble({
               : "opacity-100 focus-within:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
           }`}
         >
+          <div className="flex items-center gap-1">
+            {/* When the reply is done, the mark stays, small and still. */}
+            {isLatest && <AstraeyaMark size={16} className="ml-1.5 mr-0.5" />}
           <MessageActions
             content={content}
             onRetry={onRetry}
@@ -210,6 +205,7 @@ export function MessageBubble({
             messageId={id}
             conversationId={conversationId}
           />
+          </div>
         </div>
       )}
 

@@ -179,3 +179,58 @@ function Tagline({
     </span>
   );
 }
+
+/** Where the blue ring sits in the mark's own coordinates: its centre of rotation. */
+const RING_CENTRE = "511.4 527.9";
+
+/**
+ * The mark, which can come alive while Astraeya is thinking: the blue ring
+ * orbits around the centre, tilting up and down as it goes, while the dark
+ * stroke stays still. At rest it is just the logo.
+ */
+export function AstraeyaMark({
+  size = 20,
+  thinking = false,
+  className = "",
+  label,
+}: {
+  size?: number;
+  thinking?: boolean;
+  className?: string;
+  label?: string;
+}) {
+  const ink = ICON_PATHS.filter((p) => p.tone !== "brand");
+  const ring = ICON_PATHS.filter((p) => p.tone === "brand");
+  return (
+    <svg
+      viewBox={ICON_VIEWBOX}
+      width={size}
+      height={size}
+      role="img"
+      aria-label={label ?? (thinking ? "Astraeya is thinking" : "Astraeya")}
+      className={`shrink-0 ${thinking ? "astraeya-thinking" : ""} ${className}`}
+      style={{ color: "var(--text-primary)" }}
+    >
+      <g transform={ICON_TRANSFORM}>
+        <g className="astraeya-ring">
+          {thinking && (
+            <>
+              <animateTransform
+                attributeName="transform"
+                type="rotate"
+                values={`0 ${RING_CENTRE};180 ${RING_CENTRE};360 ${RING_CENTRE}`}
+                keyTimes="0;0.5;1"
+                dur="1.6s"
+                repeatCount="indefinite"
+              />
+            </>
+          )}
+          <g className="astraeya-ring-tilt">
+            <Paths paths={ring} />
+          </g>
+        </g>
+        <Paths paths={ink} />
+      </g>
+    </svg>
+  );
+}

@@ -2083,3 +2083,18 @@ html .chat-bubble--user {
     min-height: 88px;
   }
 }
+
+/* The logo while thinking: the blue ring tilts up and down as it orbits
+   (the orbit itself is an SVG animateTransform in AstraeyaMark). */
+.astraeya-thinking .astraeya-ring-tilt {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: astraeya-ring-tilt 0.8s ease-in-out infinite alternate;
+}
+@keyframes astraeya-ring-tilt {
+  from { transform: scaleY(1); }
+  to { transform: scaleY(0.55); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .astraeya-thinking .astraeya-ring-tilt { animation: none; }
+}
