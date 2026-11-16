@@ -26,16 +26,14 @@ jobs:
     steps:
       - name: Ping the API
         env:
-          # The live hostname, which is a Render resource and has nothing to do
-          # with what this repository calls itself. Renaming the project to
-          # Astraeya did NOT rename the deployed service, so the default
-          # below is deliberately still the real host.
+          # The live API: the Render service astraeya-api, created 2026-11-16
+          # to replace the old "hetex" service.
           #
           # To point this somewhere else, set an API_HEALTH_URL repository
           # variable (Settings -> Secrets and variables -> Actions -> Variables)
           # rather than editing this file — that way the URL follows the
           # deployment instead of the code.
-          API_HEALTH_URL: ${{ vars.API_HEALTH_URL || 'https://hetex.onrender.com/health' }}
+          API_HEALTH_URL: ${{ vars.API_HEALTH_URL || 'https://astraeya-api.onrender.com/health' }}
         run: |
           echo "pinging $API_HEALTH_URL"
           # --max-time allows for a cold start rather than failing the run when
