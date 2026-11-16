@@ -16,6 +16,7 @@ import {
   takeVoiceAllowance,
   transcribe,
   voiceServiceUp,
+  voiceServiceUpNow,
   warm,
 } from "../voice/voice.service";
 
@@ -56,7 +57,7 @@ voiceRouter.get(
   asyncHandler(async (_req, res) => {
     res.json({
       default: DEFAULT_VOICE,
-      available: hostedSpeechEnabled() || (await voiceServiceUp()),
+      available: hostedSpeechEnabled() || voiceServiceUpNow(),
       // Speech made by the hosted provider: the apps say so in their privacy text.
       hosted: hostedSpeechEnabled(),
       // Astra Assist recordings turned into text by a provider (Groq or DeepInfra).

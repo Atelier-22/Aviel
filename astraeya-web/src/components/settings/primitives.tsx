@@ -39,15 +39,11 @@ export function SectionHeader({
   resetting?: boolean;
 }) {
   return (
-    <div className="mb-6 flex items-start justify-between gap-4">
-      <div className="min-w-0">
-        <h2 className="text-[1.35rem] font-semibold tracking-[-0.01em]">{title}</h2>
-        {description && (
-          <p className="mt-1.5 text-sm leading-relaxed text-[var(--text-secondary)]">
-            {description}
-          </p>
-        )}
-      </div>
+    // Title and Reset share the top line; the description runs the full width
+    // underneath, instead of being squeezed beside the button on a phone.
+    <div className="mb-6">
+      <div className="flex items-start justify-between gap-4">
+        <h2 className="min-w-0 text-[1.35rem] font-semibold tracking-[-0.01em]">{title}</h2>
       {onReset && (
         <button
           type="button"
@@ -62,6 +58,12 @@ export function SectionHeader({
           )}
           Reset section
         </button>
+      )}
+      </div>
+      {description && (
+        <p className="mt-1.5 text-sm leading-relaxed text-[var(--text-secondary)]">
+          {description}
+        </p>
       )}
     </div>
   );
@@ -121,7 +123,7 @@ export function SettingsRow({
   if (hidden) return null;
 
   return (
-    <div className="flex flex-col gap-3 border-b border-[var(--border-subtle)] py-4 last:border-b-0 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
+    <div className="settings-row flex flex-col gap-3 border-b border-[var(--border-subtle)] py-4 last:border-b-0 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 text-sm font-medium">
           {Icon && (
@@ -142,7 +144,8 @@ export function SettingsRow({
         )}
       </div>
       {children && (
-        <div className="shrink-0 self-start sm:pt-0.5">{children}</div>
+        // Full width on a phone, so sliders and menus can use the space.
+        <div className="settings-row-control w-full self-start sm:w-auto sm:shrink-0 sm:pt-0.5">{children}</div>
       )}
     </div>
   );
@@ -198,7 +201,8 @@ export function SettingsToggle({
       aria-label={label}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`focus-ring relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+      // The after: box widens the touch area to about 44 px without changing the look.
+      className={`focus-ring relative h-6 w-11 shrink-0 rounded-full transition-colors after:absolute after:-inset-2.5 after:content-[''] disabled:cursor-not-allowed disabled:opacity-40 ${
         checked ? "bg-accent-gradient" : "bg-black/15 dark:bg-white/15"
       }`}
     >
@@ -402,7 +406,7 @@ export function SettingsSlider({
   useEffect(() => setLocal(value), [value]);
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex w-full items-center gap-3 sm:w-auto">
       <input
         type="range"
         aria-label={label}
@@ -415,7 +419,7 @@ export function SettingsSlider({
         onPointerUp={() => local !== value && onCommit(local)}
         onKeyUp={() => local !== value && onCommit(local)}
         onBlur={() => local !== value && onCommit(local)}
-        className="settings-slider focus-ring h-1.5 w-36 cursor-pointer appearance-none rounded-full bg-black/10 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white/15"
+        className="settings-slider focus-ring h-1.5 min-w-0 flex-1 cursor-pointer sm:w-36 sm:flex-none appearance-none rounded-full bg-black/10 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white/15"
       />
       <span className="min-w-[3rem] text-right font-mono text-xs tabular-nums text-[var(--text-secondary)]">
         {(format ?? ((v: number) => String(v)))(local)}

@@ -2105,3 +2105,19 @@ html .chat-bubble--user {
 @media (prefers-reduced-motion: reduce) {
   .astraeya-thinking .astraeya-ring-tilt { animation: none; }
 }
+
+/* Settings on a phone: a row whose control is a switch keeps the switch on
+   the right of its label, as on a desktop, instead of on a line of its own. */
+@media (max-width: 639.98px) {
+  .settings-row:has(> .settings-row-control > [role="switch"]:only-child) {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  .settings-row:has(> .settings-row-control > [role="switch"]:only-child) > .settings-row-control {
+    width: auto;
+    flex-shrink: 0;
+    align-self: center;
+  }
+}

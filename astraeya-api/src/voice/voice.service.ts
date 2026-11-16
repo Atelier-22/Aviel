@@ -228,6 +228,17 @@ export async function voiceServiceUp(): Promise<boolean> {
 }
 
 /**
+ * The last known answer, at once, refreshing it in the background when it is
+ * old. For the voice list: it must not wait on a sleeping voice server (up to
+ * 12 s on a serverless host) before the settings can show the voices. Until
+ * the first check, assumes up: the boot probe runs straight away.
+ */
+export function voiceServiceUpNow(): boolean {
+  if (up === null || Date.now() - checkedAt >= 30_000) void voiceServiceUp();
+  return up ?? true;
+}
+
+/**
  * Makes speech ahead of time and keeps it in the cache, so it plays the
  * moment it is asked for: the live-mode greeting, and the preview clips.
  * Failures are ignored; the real request will simply make it then.

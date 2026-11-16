@@ -206,10 +206,15 @@ export function VoiceSection() {
               value={values.outputVoice}
               disabled={voices.length === 0 || voiceDisabled}
               onChange={(v) => set({ outputVoice: v })}
-              groups={groupVoices(voices).map((g) => ({
-                label: g.label,
-                options: g.voices.map((v) => ({ value: v.id, label: v.label })),
-              }))}
+              {...(voices.length
+                ? {
+                    groups: groupVoices(voices).map((g) => ({
+                      label: g.label,
+                      options: g.voices.map((v) => ({ value: v.id, label: v.label })),
+                    })),
+                  }
+                : // Never an empty box while the list is on its way.
+                  { options: [{ value: values.outputVoice, label: "Loading voices…" }] })}
             />
             <SettingsButton
               onClick={preview}
