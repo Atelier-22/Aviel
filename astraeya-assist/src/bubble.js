@@ -10,6 +10,9 @@ let busy = false;
 let conversationId = null;
 let voiceId = "af_heart";
 let hideTimer = null;
+/** When each step of the last turn happened, in ms; for diagnosing delays. */
+window.__timeline = [];
+const mark = (step) => window.__timeline.push([step, Math.round(performance.now())]);
 
 /* ---------------------------------------------------------------- the mark */
 (function drawMark() {
@@ -60,7 +63,10 @@ function setState(state) {
 function caption({ you, say, note } = {}) {
   clearTimeout(hideTimer);
   if (you !== undefined) $("you").textContent = you ? `You: ${you}` : "";
-  if (say !== undefined) $("say").textContent = say;
+  if (say !== undefined) {
+    $("say").textContent = say;
+    $("say").scrollTop = $("say").scrollHeight;
+  }
   if (note !== undefined) $("note").textContent = note;
   $("card").classList.toggle("show", Boolean($("you").textContent || $("say").textContent || $("note").textContent));
 }
@@ -77,7 +83,9 @@ async function heard(wav) {
   busy = true;
   setState("thinking");
   // The screenshot is taken while the words are being worked out, not after.
-  const shotPromise = window.assist.capture().catch(() => null);
+  window.__timeline = [];
+  mark("turn ended");
+  const shotPromise = window.assist.capture().catch(() => null).then((s) => (mark("screenshot ready"), s));
   try {
     const res = await fetch(`${config.apiUrl}/voice/transcribe`, {
       method: "POST",
@@ -85,6 +93,7 @@ async function heard(wav) {
       body: wav,
     });
     const { text = "" } = res.ok ? await res.json() : {};
+    mark("words ready");
     const question = text.replace(/^\s*(hey,?\s+)?astra(eya)?[,.!]?\s*/i, "").trim();
     if (!question || /^(thank you\.?|you\.?|bye\.?)$/i.test(question)) {
       setState("listening");
@@ -116,10 +125,11 @@ async function ask(question, captured) {
     apiUrl: config.apiUrl,
     token: config.token,
     voice: voiceId,
-    onStart: () => setState("speaking"),
+    onStart: () => { mark("sound started"); setState("speaking"); },
     onEnd: () => { if (document.body.dataset.state !== "off") setState("listening"); fadeCaption(); },
   });
   const sentences = new Sentences();
+  mark("asking");
   const res = await fetch(`${config.apiUrl}/assist/ask`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.token}` },
@@ -150,9 +160,10 @@ async function ask(question, captured) {
       const data = JSON.parse(raw.match(/^data: (.*)$/m)?.[1] || "null");
       if (type === "meta") conversationId = data.conversationId;
       else if (type === "chunk") {
+        if (!said) mark("first words from model");
         said += data.text;
         caption({ say: said, note: "" });
-        for (const s of sentences.push(data.text)) voice.enqueue(s);
+        for (const s of sentences.push(data.text)) { mark(`speak: ${s.slice(0, 30)}`); voice.enqueue(s); }
       } else if (type === "point" && shot) {
         window.assist.point({ x: data.x, y: data.y, label: data.label, shot });
       } else if (type === "clipboard") {
@@ -167,6 +178,9 @@ async function ask(question, captured) {
   voice.end();
   if (!said.trim()) setState("listening");
 }
+
+/* The main process says which corner of the window the logo is in. */
+window.assist.onAnchor((anchor) => (document.body.dataset.anchor = anchor));
 
 /* ------------------------------------------------------------ on and off */
 window.assist.onStart(async () => {

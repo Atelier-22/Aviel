@@ -150,24 +150,43 @@ function clauses(sentence: string, minClause: number): string[] {
  * With `first`, the opening words up to the first comma become their own
  * piece, so sound starts as soon as possible.
  */
+/**
+ * How long each of the first pieces may be, in characters. Each is a little
+ * longer than the one before, so it is made by the time the one before has
+ * finished playing: speech starts at once and never waits between pieces.
+ */
+const RAMP = [24, 42, 72];
+
+/** Where to cut `text` at or before `limit`: punctuation if there is some, else a space. */
+function cutAt(text: string, limit: number): number {
+  if (text.length <= limit * 1.3) return text.length;
+  // A comma a little past the limit sounds better than a cut between words.
+  const window = text.slice(0, Math.round(limit * 1.35) + 1);
+  const punct = Math.max(window.lastIndexOf(", "), window.lastIndexOf("; "), window.lastIndexOf(": "), window.lastIndexOf(" – "), window.lastIndexOf(" — "));
+  if (punct >= limit * 0.4) return punct + 1;
+  const space = text.slice(0, limit + 1).lastIndexOf(" ");
+  // At least a couple of words; never inside a word.
+  if (space >= 8) return space;
+  const next = text.indexOf(" ", limit);
+  return next === -1 ? text.length : next;
+}
+
 export function speechPieces(sentences: string[], first = true): SpeechPiece[] {
   const pieces: SpeechPiece[] = [];
   const add = (parts: string[]) => parts.forEach((text, j) => pieces.push({ text, endsSentence: j === parts.length - 1 }));
-  sentences.forEach((sentence, i) => {
-    if (first && i === 0) {
-      // The opening words on their own, then the rest of the sentence.
-      const m = sentence.slice(6).match(/[,;:–—]\s+/);
-      if (m && m.index !== undefined) {
-        const at = 6 + m.index + 1;
-        const rest = sentence.slice(at).trim();
-        if (/[\p{L}\p{N}]/u.test(rest)) {
-          add([sentence.slice(0, at).trim(), ...(rest.length > SPLIT_ABOVE ? clauses(rest, MIN_CLAUSE) : [rest])]);
-          return;
-        }
-      }
+  let step = first ? 0 : RAMP.length;
+  for (const sentence of sentences) {
+    let rest = sentence;
+    // The start of a reply: short pieces, growing.
+    while (step < RAMP.length && rest) {
+      const at = cutAt(rest, RAMP[step]);
+      const piece = rest.slice(0, at).trim();
+      rest = rest.slice(at).trim();
+      if (piece) pieces.push({ text: piece, endsSentence: !rest });
+      step++;
     }
-    add(sentence.length > SPLIT_ABOVE ? clauses(sentence, MIN_CLAUSE) : [sentence]);
-  });
+    if (rest) add(rest.length > SPLIT_ABOVE ? clauses(rest, MIN_CLAUSE) : [rest]);
+  }
   return pieces;
 }
 

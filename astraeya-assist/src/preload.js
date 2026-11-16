@@ -13,4 +13,5 @@ contextBridge.exposeInMainWorld("assist", {
   onStart: (fn) => ipcRenderer.on("assist:start", fn),
   onStop: (fn) => ipcRenderer.on("assist:stop", fn),
   onPointer: (fn) => ipcRenderer.on("pointer:show", (_e, spot) => fn(spot)),
+  onAnchor: (fn) => ipcRenderer.on("assist:anchor", (_e, anchor) => fn(anchor)),
 });

@@ -12,6 +12,7 @@ import { createHash } from "node:crypto";
 import { env } from "../env";
 import { DEFAULT_VOICE, findVoice, normalizeVoiceId } from "./catalogue";
 import { speechPieces, splitSentences } from "./sentences";
+import { normalizeForSpeech } from "./normalize";
 
 export class VoiceUnavailable extends Error {}
 
@@ -79,7 +80,9 @@ export function clearVoiceCache() {
 const inFlight = new Map<string, Promise<Speech>>();
 
 /** One piece of speech in one voice, from the cache if it has been made before. */
-export async function synthesize(text: string, voiceId: string, signal?: AbortSignal): Promise<Speech> {
+export async function synthesize(written: string, voiceId: string, signal?: AbortSignal): Promise<Speech> {
+  // Said the way a person would say it: "2.4 GB" is "2 point four gigabytes".
+  const text = normalizeForSpeech(written);
   const voice = normalizeVoiceId(voiceId);
   const key = cacheKey(voice, text);
   const hit = cacheGet(key);

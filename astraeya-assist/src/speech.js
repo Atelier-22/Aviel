@@ -139,7 +139,9 @@ class Sentences {
     this.buf += text;
     const out = [];
     for (;;) {
-      const m = this.buf.match(/^([\s\S]*?[.!?])(\s+)(?=\S)/) || (this.first && this.buf.length > 18 ? this.buf.match(/^([\s\S]{12,}?[,;:])(\s+)/) : null);
+      // The opening words go as soon as there is a comma: "Peter," is
+      // spoken while the rest is still being written.
+      const m = this.buf.match(/^([\s\S]*?[.!?])(\s+)(?=\S)/) || (this.first ? this.buf.match(/^([\s\S]{4,}?[,;:])(\s+)/) : null);
       if (!m) break;
       out.push(m[1].trim());
       this.buf = this.buf.slice(m[0].length);
@@ -266,6 +268,8 @@ class Voice {
     src.connect(this.ctx.destination);
     const at = Math.max(this.ctx.currentTime + 0.02, this.next);
     src.start(at);
+    // Kept for diagnosing pauses: when each piece starts, and how long it is.
+    (window.__plays ||= []).push([at, buffer.duration, buffer.pause]);
     this.next = at + buffer.duration + buffer.pause;
     this.sources.add(src);
     src.onended = () => this.sources.delete(src);

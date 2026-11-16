@@ -146,18 +146,28 @@ describe("migration 0015", () => {
 describe("speech pieces", () => {
   const words = (pieces: { text: string }[]) => pieces.map((p) => p.text).join(" ");
 
-  it("starts with the opening words, up to the first comma", () => {
-    const pieces = speechPieces(["Good question, Brian.", "Next one."]);
-    assert.deepEqual(pieces, [
-      { text: "Good question,", endsSentence: false },
-      { text: "Brian.", endsSentence: true },
-      { text: "Next one.", endsSentence: true },
+  it("starts a reply with short pieces that grow, cut at commas where there are some", () => {
+    const pieces = speechPieces([
+      "Peter, the problem is a typo: you typed adress instead of address, so the router doesn't recognise the command.",
+      "Next one.",
     ]);
+    assert.deepEqual(pieces.map((p) => p.text), [
+      "Peter, the problem is a typo:",
+      "you typed adress instead of address,",
+      "so the router doesn't recognise the command.",
+      "Next one.",
+    ]);
+    // Each opening piece is no longer than the ramp allows (with room to reach a comma).
+    assert.ok(pieces[0].text.length <= 33 && pieces[1].text.length <= 57);
   });
 
-  it("speaks long sentences clause by clause, at punctuation only", () => {
+  it("keeps a short opening sentence whole", () => {
+    assert.deepEqual(speechPieces(["Good question, Brian.", "Next one."]).map((p) => p.text), ["Good question, Brian.", "Next one."]);
+  });
+
+  it("speaks long sentences clause by clause once past the opening", () => {
     const long = "Kampala is one of the best known towns in Uganda, and many people visit it every year.";
-    assert.deepEqual(speechPieces(["Hi.", long]), [
+    assert.deepEqual(speechPieces(["Hi.", long], false), [
       { text: "Hi.", endsSentence: true },
       { text: "Kampala is one of the best known towns in Uganda,", endsSentence: false },
       { text: "and many people visit it every year.", endsSentence: true },
@@ -216,5 +226,27 @@ describe("the web app's copy of the sentence splitter", () => {
     if (!existsSync(web)) return; // the API checked out on its own
     const norm = (f: string) => readFileSync(f, "utf8").replace(/\r\n/g, "\n");
     assert.equal(norm(web), norm(path.join(__dirname, "sentences.ts")));
+  });
+});
+
+import { normalizeForSpeech } from "./normalize";
+
+describe("numbers are said the way a person says them", () => {
+  const cases: [string, string][] = [
+    ["Your disk had 2.4 GB free, then 4 GB.", "Your disk had 2 point four gigabytes free, then 4 gigabytes."],
+    ["Version 2.0.1 is out.", "Version 2 point 0 point 1 is out."],
+    ["Type ip address 192.168.1.1 255.255.255.0 now.", "Type ip address 192 dot 168 dot 1 dot 1, 255 dot 255 dot 255 dot 0 now."],
+    ["It costs $12.50, or $5, or $1.", "It costs 12 dollars and 50 cents, or 5 dollars, or 1 dollar."],
+    ["The file is 1,024 KB, about 1 MB.", "The file is 1024 kilobytes, about 1 megabyte."],
+    ["Pi is 3.14 and 45% done.", "Pi is 3 point one four and 45 percent done."],
+    ["A 2.4GHz router at 100 Mbps.", "A 2 point four gigahertz router at 100 megabits per second."],
+  ];
+  for (const [said, expected] of cases) {
+    it(`"${said}"`, () => assert.equal(normalizeForSpeech(said), expected));
+  }
+
+  it("leaves ordinary text alone", () => {
+    const plain = "Open the Settings menu, then click Save. It's done!";
+    assert.equal(normalizeForSpeech(plain), plain);
   });
 });

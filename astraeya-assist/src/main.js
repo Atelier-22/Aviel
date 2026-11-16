@@ -24,7 +24,7 @@ const fs = require("node:fs");
 
 const HOTKEYS = ["Super+Control+A", "Control+Alt+A"];
 /** Longest side of the screenshot sent to the model; larger only costs time. */
-const MAX_SHOT = 1366;
+const MAX_SHOT = 1280;
 
 // The windows are tiny and mostly transparent. Compositing them on the GPU
 // cost over a gigabyte of memory and kept Windows redrawing the screen;
@@ -38,6 +38,14 @@ let pointerWin = null;
 let followTimer = null;
 let pointerTimer = null;
 let lastCursor = { x: -1, y: -1 };
+let lastAnchor = "";
+
+/** The bubble window: the logo in one corner, the text card beside it. */
+const BUBBLE_W = 380;
+const BUBBLE_H = 270;
+/** The logo's size plus its margin, and its distance from the cursor tip. */
+const ORB = 66;
+const GAP = 14;
 let active = false;
 let hotkey = null;
 
@@ -102,11 +110,12 @@ function openSetup() {
 
 function createBubble() {
   bubbleWin = new BrowserWindow({
-    width: 340,
-    height: 150,
+    width: BUBBLE_W,
+    height: BUBBLE_H,
     frame: false,
     transparent: true,
     resizable: false,
+    useContentSize: true,
     alwaysOnTop: true,
     skipTaskbar: true,
     focusable: false,
@@ -146,13 +155,28 @@ function follow(force = false) {
   // makes Windows redraw it.
   if (!force && p.x === lastCursor.x && p.y === lastCursor.y) return;
   lastCursor = p;
-  const { workArea } = screen.getDisplayNearestPoint(p);
-  const [w, h] = bubbleWin.getSize();
-  let x = p.x + 22;
-  let y = p.y + 22;
-  if (x + w > workArea.x + workArea.width) x = p.x - w - 12;
-  if (y + h > workArea.y + workArea.height) y = p.y - h - 12;
-  bubbleWin.setPosition(Math.round(x), Math.round(y), false);
+  const wa = screen.getDisplayNearestPoint(p).workArea;
+  const right = wa.x + wa.width;
+  const bottom = wa.y + wa.height;
+
+  // The logo always sits just below-right of the cursor tip; only if the
+  // cursor is right at the screen's edge does it go to the other side.
+  const orbLeft = p.x + GAP + ORB <= right ? p.x + GAP : p.x - GAP - ORB;
+  const orbTop = p.y + GAP + ORB <= bottom ? p.y + GAP : p.y - GAP - ORB;
+  // The text card opens towards whichever side has room.
+  const cardRight = orbLeft + BUBBLE_W <= right;
+  const cardBelow = orbTop + BUBBLE_H <= bottom;
+  const x = cardRight ? orbLeft : orbLeft + ORB - BUBBLE_W;
+  const y = cardBelow ? orbTop : orbTop + ORB - BUBBLE_H;
+
+  // setBounds with the size every time: at 150% scaling, moving a window
+  // without it makes Windows grow it a few pixels at a time.
+  bubbleWin.setBounds({ x: Math.round(x), y: Math.round(y), width: BUBBLE_W, height: BUBBLE_H }, false);
+  const anchor = `${cardRight ? "left" : "right"}-${cardBelow ? "top" : "bottom"}`;
+  if (anchor !== lastAnchor) {
+    lastAnchor = anchor;
+    bubbleWin.webContents.send("assist:anchor", anchor);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -168,7 +192,8 @@ function setActive(on) {
   if (on) {
     follow(true);
     bubbleWin.showInactive();
-    followTimer = setInterval(follow, 33);
+    // Checked 60 times a second; the window only moves when the cursor did.
+    followTimer = setInterval(follow, 16);
     bubbleWin.webContents.send("assist:start");
   } else {
     clearInterval(followTimer);
@@ -303,6 +328,9 @@ if (!TESTING && !app.requestSingleInstanceLock()) {
 
   app.whenReady().then(() => {
     app.setAppUserModelId("com.wezitech.astraassist");
+    // Always there: it starts with Windows (quietly, in the tray), so the
+    // keys work any time. Not for test copies.
+    if (!TESTING && app.isPackaged) app.setLoginItemSettings({ openAtLogin: true, args: ["--background"] });
     createBubble();
     createPointer();
 
@@ -318,7 +346,7 @@ if (!TESTING && !app.requestSingleInstanceLock()) {
     updateTray();
 
     // First run, or not signed in: show the set-up screen.
-    if (!getToken() || process.argv.includes("--setup")) openSetup();
+    if ((!getToken() && !process.argv.includes("--background")) || process.argv.includes("--setup")) openSetup();
     if (process.argv.includes("--on")) setActive(true);
   });
 
