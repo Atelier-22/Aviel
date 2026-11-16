@@ -17,6 +17,7 @@ import {
 import {
   FILE_MAKING_NOTE,
   MEDIA_TOOLS_NOTE,
+  SANDBOX_NOTE,
   VECTOR_ART_NOTE,
   memoryPromptBlock,
   recallPromptBlock,
@@ -620,6 +621,7 @@ chatRouter.post(
     }
 
     notes.push(...fileNotes);
+    if (!fileMaking && sandboxAvailable) notes.push(SANDBOX_NOTE);
     if (mediaTools.length) {
       notes.push(
         MEDIA_TOOLS_NOTE({ generation: mediaGeneration, maxVideoSeconds: config.limits.maxVideoSeconds })
@@ -631,7 +633,7 @@ chatRouter.post(
 You cannot make images or videos on this model or server. If the user asks for one, say so plainly in one sentence and offer what you can do instead. Never claim to have made a file.`
       );
     }
-    if (!fileMaking && !mediaGeneration && wantsVectorArt(message)) notes.push(VECTOR_ART_NOTE);
+    if (!fileMaking && !mediaGeneration && !sandboxAvailable && wantsVectorArt(message)) notes.push(VECTOR_ART_NOTE);
 
     if (session) notes.push(sessionPromptBlock(session));
     if (live) notes.push(LIVE_VOICE_NOTE);
@@ -680,6 +682,8 @@ You cannot make images or videos on this model or server. If the user asks for o
       // Balanced and Fast answer straight away; Deep thinks hard first.
       effort: (think.mode === "deep" ? "high" : "low") as GenerationOptions["effort"],
       ...(fileMaking ? { fileMaking } : {}),
+      // Always there when it can be: any message can turn into a file.
+      ...(!fileMaking && sandboxAvailable ? { sandbox: true } : {}),
       ...(mediaTools.length ? { tools: mediaTools } : {}),
       // The think mode can only narrow the account's ceiling, never widen it
       // past what the platform allows.

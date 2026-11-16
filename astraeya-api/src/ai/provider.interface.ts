@@ -46,6 +46,12 @@ export interface GenerationOptions {
   /** Make files this turn (documents, slides, sheets, charts, edited images). */
   fileMaking?: FileMaking;
   /**
+   * Offer the code sandbox on this turn even when the message did not look
+   * like a file request, so the model can make a file whenever it is asked
+   * for one rather than saying it cannot.
+   */
+  sandbox?: boolean;
+  /**
    * Tools that run on this server (image and video generation). Providers
    * without tool calling ignore them, and the chat route says so in the prompt.
    */

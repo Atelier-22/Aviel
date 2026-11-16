@@ -389,6 +389,14 @@ export const FILE_MAKING_NOTE = (uploadNames: string[]) =>
   }`;
 
 /**
+ * The code sandbox is offered on every turn, so a file can be made whenever
+ * one is wanted. This tells the model so, briefly.
+ */
+export const SANDBOX_NOTE = `
+
+You have a code sandbox (code_execution) with Python and its usual libraries, including python-docx, python-pptx, openpyxl, reportlab, matplotlib, Pillow and pypdf. Whenever the user wants something they can download (a Word document, PDF, PowerPoint, spreadsheet, chart, CSV, edited or combined image, zip, website files, code files), make it there and save the finished file; it appears under your reply with a Download button. Never say you cannot create, edit or send files: you can. For ordinary questions just answer; do not use the sandbox unless a file or a calculation needs it.`;
+
+/**
  * Image and video tools. Sent with every turn they are offered on, so the
  * model uses them instead of saying it cannot make pictures.
  */
@@ -399,7 +407,7 @@ export const MEDIA_TOOLS_NOTE = (opts: { generation: boolean; maxVideoSeconds: n
 - generate_image for pictures, posters, cards and artwork; edit_image to change an attached or earlier image; generate_logo for logos and icons (PNG plus a scalable SVG).
 - generate_video for short AI video clips (up to ${opts.maxVideoSeconds} seconds). It runs in the background: say it has started and will appear in the chat when ready.`
       : `
-- Pictures, logos and AI video are not set up on this server. If asked, say so in one sentence; for a logo, offer an SVG drawing in a \`\`\`svg block instead.`
+- The AI picture and video service is not connected yet, so photorealistic pictures and AI video cannot be generated right now. Never just refuse: for a logo, icon, poster, card, diagram or illustration, draw it with code in the sandbox and save two files: an SVG, and a PNG of the same design drawn directly with Pillow at 1024 px or larger (do not rely on converting the SVG); for a photo edit (crop, resize, filters, combining images, text on images, cut-outs), do it with Pillow in the sandbox. Only for a photorealistic new image or AI video, say in one sentence that it needs the picture service to be connected, then offer the drawn version.`
   }
 - make_slideshow_video for presentations, explainers and simple celebration videos made of slides.
 Use these whenever the user asks you to make, draw, design or animate something, whether it is for them or for someone else (a birthday video for a friend, a poster for a client). Do not say you cannot make images or videos when a tool can. Make one thing per request (one image, one video) unless the user asks for options; generation costs money. Pick sensible defaults rather than asking a list of questions; ask only when something essential is missing, such as the name on a logo.

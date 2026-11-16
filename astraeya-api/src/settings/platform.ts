@@ -60,20 +60,21 @@ export const platformConfigSchema = z.object({
     .object({
       /** 0 means no ceiling. */
       messagesPerDay: z.number().int().min(0).default(0),
-      // Paid per use at the media service, so these have real defaults.
-      imageGenerationsPerDay: z.number().int().min(0).default(20),
-      videoGenerationsPerDay: z.number().int().min(0).default(2),
+      // No limits by default: the owner pays for the usage and wants every
+      // request met. An administrator can still set a ceiling. 0 = no limit.
+      imageGenerationsPerDay: z.number().int().min(0).default(0),
+      videoGenerationsPerDay: z.number().int().min(0).default(0),
       // The longest AI video one request may ask for, in seconds. 3–15.
-      maxVideoSeconds: z.number().int().min(3).max(15).default(5),
+      maxVideoSeconds: z.number().int().min(3).max(15).default(15),
       // At most this many videos rendering at once for the whole platform;
       // the rest wait their turn.
       maxConcurrentVideos: z.number().int().min(1).max(50).default(3),
       // Spend ceiling per user per day across images and video, in US cents.
-      // 0 means no ceiling.
-      dailySpendCentsPerUser: z.number().int().min(0).default(300),
+      // 0 means no ceiling (the default).
+      dailySpendCentsPerUser: z.number().int().min(0).default(0),
       // Each file request runs code in a sandbox, which costs more than a
       // reply. 0 means no limit.
-      filesPerDay: z.number().int().min(0).default(30),
+      filesPerDay: z.number().int().min(0).default(0),
       // Made files are deleted this many days after they were made, here and
       // in the provider's store. 1–30.
       madeFileRetentionDays: z.number().int().min(1).max(30).default(7),

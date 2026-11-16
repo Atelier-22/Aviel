@@ -176,6 +176,9 @@ export class AnthropicProvider implements AIProvider {
 
       // ---- File making: the code sandbox and document skills -------------
       const making = options?.fileMaking;
+      // The sandbox is offered whenever files may be made; the document
+      // skills and uploads come with it only when the message asked for a file.
+      const sandbox = Boolean(making || options?.sandbox);
       if (making) {
         yield { type: "status", status: making.uploads.length ? "Reading your files…" : "Getting ready…" };
         // The user's attachments go into the sandbox, so code can open them:
@@ -223,7 +226,7 @@ export class AnthropicProvider implements AIProvider {
               },
             ]
           : []),
-        ...(making
+        ...(sandbox
           ? [{ type: "code_execution_20260521" as const, name: "code_execution" as const }]
           : []),
       ];
@@ -248,7 +251,7 @@ export class AnthropicProvider implements AIProvider {
       const supportsFallback = FALLBACK_MODELS.has(model);
       const betas = [
         ...(supportsFallback ? ["server-side-fallback-2026-07-01"] : []),
-        ...(making ? ["code-execution-2025-08-25"] : []),
+        ...(sandbox ? ["code-execution-2025-08-25"] : []),
       ];
 
       const container = making
@@ -267,6 +270,8 @@ export class AnthropicProvider implements AIProvider {
       let wroteText = false;
       let final: Anthropic.Beta.BetaMessage | null = null;
       const madeFileIds = new Set<string>();
+      // The same file saved twice in one reply is handed over once.
+      const madeFiles = new Set<string>();
       const used = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
 
       // A long job (building a 15-slide deck) can pause partway; the API then
@@ -280,7 +285,7 @@ export class AnthropicProvider implements AIProvider {
         // SDK's unions until it runs out of memory.
         const params: BetaMessageStreamParams = {
           model,
-          max_tokens: making
+          max_tokens: sandbox
             ? Math.max(options?.maxTokens ?? 0, 32000)
             : (options?.maxTokens ?? 8192),
           // Caches up to the last cacheable block, moving forward each turn.
@@ -347,6 +352,10 @@ export class AnthropicProvider implements AIProvider {
           madeFileIds.add(fileId);
           try {
             const meta = await client.files.retrieveMetadata(fileId);
+            const sameFile = `${meta.filename}
+${meta.size_bytes ?? ""}`;
+            if (madeFiles.has(sameFile)) continue;
+            madeFiles.add(sameFile);
             yield {
               type: "file",
               file: {
@@ -397,7 +406,7 @@ export class AnthropicProvider implements AIProvider {
               type: "tool_result",
               tool_use_id: call.id,
               is_error: true,
-              content: making
+              content: sandbox
                 ? `There is no "${call.name}" tool. Use code_execution (bash and the file editor inside it) to look at files, run code and save the finished files.`
                 : `There is no "${call.name}" tool. Answer without it.`,
             });
@@ -416,7 +425,7 @@ export class AnthropicProvider implements AIProvider {
 
       if (!final) throw new Error("No response from the model");
 
-      if (making && final.container?.id) {
+      if (sandbox && final.container?.id) {
         yield { type: "container", containerId: final.container.id };
       }
 

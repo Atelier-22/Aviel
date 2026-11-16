@@ -126,11 +126,12 @@ describe("platform config", () => {
     assert.equal(config.billingConfigured, false);
   });
 
-  it("caps paid generation by default", () => {
-    assert.ok(config.limits.imageGenerationsPerDay > 0);
-    assert.ok(config.limits.videoGenerationsPerDay > 0);
-    assert.ok(config.limits.dailySpendCentsPerUser > 0);
-    assert.ok(config.limits.maxVideoSeconds <= 15);
+  it("puts no daily limit on making things by default", () => {
+    assert.equal(config.limits.imageGenerationsPerDay, 0);
+    assert.equal(config.limits.videoGenerationsPerDay, 0);
+    assert.equal(config.limits.filesPerDay, 0);
+    assert.equal(config.limits.dailySpendCentsPerUser, 0);
+    assert.equal(config.limits.maxVideoSeconds, 15);
   });
 
   it("does not reveal vendor names by default", () => {
