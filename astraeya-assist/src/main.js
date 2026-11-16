@@ -71,7 +71,9 @@ function writeSettings(patch) {
 }
 
 function apiUrl() {
-  return (process.env.ASTRAEYA_API_URL || readSettings().apiUrl || "http://localhost:4000").replace(/\/$/, "");
+  // The live Astraeya by default; a local server only when chosen in set-up
+  // (the Server field) or through ASTRAEYA_API_URL for development.
+  return (process.env.ASTRAEYA_API_URL || readSettings().apiUrl || "https://astraeya-api.onrender.com").replace(/\/$/, "");
 }
 
 function getToken() {
