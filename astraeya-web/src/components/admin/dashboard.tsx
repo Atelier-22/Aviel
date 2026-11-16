@@ -72,7 +72,7 @@ export function AdminDashboard({
   }
 
   return (
-    <div className="min-h-dvh bg-[var(--bg-primary)]">
+    <div className="flex-1 bg-[var(--bg-primary)]">
       {/* Its own header. No sidebar, nothing from the chat app. */}
       <header className="sticky top-0 z-10 border-b border-[var(--border-subtle)] bg-[var(--bg-primary)]/90 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-5 py-3">

@@ -73,7 +73,7 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[var(--bg-primary)] px-4">
+    <div className="flex flex-1 items-center justify-center bg-[var(--bg-primary)] px-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center gap-2">
           <AstraeyaLockup height={72} />

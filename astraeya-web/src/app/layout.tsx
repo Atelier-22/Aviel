@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Cormorant_Garamond } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
+import { WezitechCredit } from "@/components/brand/wezitech-credit";
 
 // The wordmark face, and nothing else. Scoped to a CSS variable rather than
 // applied to body so it cannot leak into interface copy, which stays on the
@@ -59,8 +60,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={serif.variable} suppressHydrationWarning>
-      <body className="font-sans antialiased">
-        <Providers>{children}</Providers>
+      <body className="flex min-h-dvh flex-col font-sans antialiased">
+        <Providers>
+          <div className="flex flex-1 flex-col">{children}</div>
+          <WezitechCredit />
+        </Providers>
       </body>
     </html>
   );

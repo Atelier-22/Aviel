@@ -17,7 +17,7 @@ export function MarketingPage({
   wide?: boolean;
 }) {
   return (
-    <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)]">
+    <div className="flex-1 bg-[var(--bg-primary)] text-[var(--text-primary)]">
       <MarketingNav />
       <main
         className={`mx-auto px-5 py-14 sm:py-16 ${wide ? "max-w-4xl" : "max-w-2xl"}`}

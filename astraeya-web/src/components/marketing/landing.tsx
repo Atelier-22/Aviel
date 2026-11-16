@@ -56,7 +56,7 @@ const FEATURES = [
 
 export function Landing() {
   return (
-    <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)]">
+    <div className="flex-1 bg-[var(--bg-primary)] text-[var(--text-primary)]">
       <MarketingNav />
 
       {/* ---------------- Hero ---------------- */}

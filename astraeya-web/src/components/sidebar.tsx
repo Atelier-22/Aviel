@@ -570,7 +570,7 @@ export function Sidebar() {
   return (
     <>
       {/* Desktop */}
-      <div className="sticky top-0 hidden h-screen md:block">{content}</div>
+      <div className="sticky top-0 hidden h-full md:block">{content}</div>
 
       {/* Mobile */}
       <button

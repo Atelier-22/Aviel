@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 
 export default function CompanyPage() {
   return (
-    <div className="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)]">
+    <div className="flex-1 bg-[var(--bg-primary)] text-[var(--text-primary)]">
       <MarketingNav />
 
       <main className="mx-auto max-w-2xl px-5 py-16">
