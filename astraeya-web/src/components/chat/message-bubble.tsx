@@ -4,6 +4,7 @@ import { AstraeyaMark } from "@/components/logo";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Cloud, HardDrive } from "lucide-react";
+import { useMounted } from "@/lib/use-mounted";
 import { CodeBlock } from "./code-block";
 import { MessageActions } from "./message-actions";
 import { MadeFiles, type MadeFile, type MediaJob } from "./made-files";
@@ -55,9 +56,12 @@ export function MessageBubble({
   status?: string;
 }) {
   const behavior = useSettingsGroup("behavior");
+  // The time is shown in the device's time zone, which the server doesn't know.
+  const mounted = useMounted();
 
   const isUser = role === "user";
   const time =
+    mounted &&
     timestamp &&
     new Date(timestamp).toLocaleTimeString([], {
       hour: "2-digit",

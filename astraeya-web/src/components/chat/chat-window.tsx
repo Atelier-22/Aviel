@@ -40,6 +40,7 @@ import { rememberGreeting } from "@/lib/voice/greeting";
 import { preferredMicrophone, startRecognitionOn } from "@/lib/voice/microphone";
 import { VoiceNotice } from "@/components/voice/voice-notice";
 import { MAX_DICTATION_MS, shouldRestartDictation } from "@/lib/voice/dictation";
+import { useMounted } from "@/lib/use-mounted";
 
 type Message = {
   id: string;
@@ -82,10 +83,14 @@ const SUGGESTIONS: { label: string; icon: typeof BookOpen; prompt: string }[] = 
   { label: "Research a question", icon: Search, prompt: "Research this question and give me the strongest evidence on each side: " },
 ];
 
-/** "Good morning", "Good afternoon" or "Good evening", by the device's clock. */
-function greeting(name: string | null): string {
+/**
+ * "Good morning", "Good afternoon" or "Good evening", by the device's clock.
+ * Before the browser takes over there is no device clock (the server is on
+ * UTC), so it says "Hello" until then.
+ */
+function greeting(name: string | null, mounted: boolean): string {
   const h = new Date().getHours();
-  const part = h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+  const part = !mounted ? "Hello" : h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
   return name ? `${part}, ${name}` : part;
 }
 
@@ -98,6 +103,7 @@ export function ChatWindow({
   title?: string;
   initialMessages?: Message[];
 }) {
+  const mounted = useMounted();
   const router = useRouter();
   const { settings, meta } = useSettingsStore();
 
@@ -894,7 +900,7 @@ export function ChatWindow({
           <div className="w-full max-w-[760px]">
             <h1 className="mb-8 flex items-center justify-center gap-3 text-center font-serif text-[2rem] font-medium leading-tight text-[var(--text-primary)] sm:text-[2.6rem]">
               <AstraeyaIcon size={40} />
-              {greeting(firstName)}
+              {greeting(firstName, mounted)}
             </h1>
 
             {composer}
