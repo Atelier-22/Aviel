@@ -36,6 +36,11 @@ jobs:
           API_HEALTH_URL: ${{ vars.API_HEALTH_URL || 'https://astraeya-api.onrender.com/health' }}
         run: |
           echo "pinging $API_HEALTH_URL"
+          # Heart's voice server on Vercel loads its model on a cold start
+          # (~5 s); a ping keeps an instance warm. Failure here is only logged.
+          vcode=$(curl -s -o /dev/null -w '%{http_code}' --max-time 60 \
+            "${VOICE_HEALTH_URL:-https://astraeya-voice.vercel.app/health}" || true)
+          echo "voice health -> $vcode"
           # --max-time allows for a cold start rather than failing the run when
           # the ping is the request that happens to wake it.
           code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 120 \

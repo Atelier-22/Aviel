@@ -216,7 +216,9 @@ function markUp() {
 export async function voiceServiceUp(): Promise<boolean> {
   if (up !== null && Date.now() - checkedAt < 30_000) return up;
   try {
-    const res = await fetch(`${baseUrl()}/health`, { signal: AbortSignal.timeout(3000) });
+    // 12 s: on a serverless host (Vercel) the first request after a quiet
+    // spell loads Heart's model, about 5 s, before it answers.
+    const res = await fetch(`${baseUrl()}/health`, { signal: AbortSignal.timeout(12_000) });
     up = res.ok;
   } catch {
     up = false;
