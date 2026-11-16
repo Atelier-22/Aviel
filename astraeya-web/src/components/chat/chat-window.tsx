@@ -34,7 +34,7 @@ import {
   recognitionLanguage,
   type SpeechRecognitionLike,
 } from "@/lib/speech";
-import { readAloud, startReading, stopReading, unlockAudio, type VoicePlayer } from "@/lib/voice/tts";
+import { readAloud, renameReadingKey, startReading, stopReading, unlockAudio, type VoicePlayer } from "@/lib/voice/tts";
 import { SentenceStream } from "@/lib/voice/sentences";
 import { rememberGreeting } from "@/lib/voice/greeting";
 import { preferredMicrophone, startRecognitionOn } from "@/lib/voice/microphone";
@@ -511,6 +511,8 @@ export function ChatWindow({
       const vs = settingsRef.current.voice;
       let speaker: VoicePlayer | null = vs.autoReadReplies
         ? startReading({
+            // The reply's speaker button shows this reading and can pause it.
+            key: assistantId,
             voice: vs.outputVoice,
             volume: vs.volume,
             rate: vs.rate,
@@ -653,6 +655,8 @@ export function ChatWindow({
     assistantMessageId?: string | null
   ) {
     if (!userMessageId && !assistantMessageId) return;
+    // A reply being read aloud keeps its pause/play button under its new id.
+    if (assistantMessageId) renameReadingKey(assistantId, assistantMessageId);
     setMessages((prev) => {
       const idx = prev.findIndex((m) => m.id === assistantId);
       if (idx === -1) return prev;

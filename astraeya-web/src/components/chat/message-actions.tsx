@@ -9,7 +9,8 @@ import {
   Share2,
   RotateCcw,
   Volume2,
-  Square,
+  Pause,
+  Play,
   GitBranch,
   Download,
   FileText,
@@ -18,7 +19,8 @@ import {
 import { apiFetch } from "@/lib/api-client";
 import { downloadMarkdown, downloadWord } from "@/lib/export-reply";
 import { useSettingsGroup } from "@/lib/settings/store";
-import { readAloud, stopReading } from "@/lib/voice/tts";
+import { readAloud, toggleReading } from "@/lib/voice/tts";
+import { useReading } from "@/lib/voice/use-reading";
 
 type Feedback = "up" | "down" | null;
 
@@ -42,7 +44,10 @@ export function MessageActions({
   const voice = useSettingsGroup("voice");
   const [copied, setCopied] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>(null);
-  const [speaking, setSpeaking] = useState(false);
+  // The same reading is shown on this button whether it was started here or
+  // by "Read every reply aloud": tap to pause, tap again to carry on.
+  const readingKey = messageId ?? `reply:${content.length}:${content.slice(0, 48)}`;
+  const reading = useReading(readingKey);
   // Astraeya's voices play through Web Audio, which every current browser has.
   const [ttsSupported, setTtsSupported] = useState(false);
   const [downloadOpen, setDownloadOpen] = useState(false);
@@ -89,21 +94,17 @@ export function MessageActions({
 
   function handleReadAloud() {
     if (!ttsSupported) return;
-    if (speaking) {
-      stopReading();
-      setSpeaking(false);
-      return;
-    }
     // Voice, speed, pitch and volume all come from the account's settings, so
     // Read Aloud sounds the same here as the preview in Settings does.
-    readAloud(content, {
-      voice: voice.outputVoice,
-      volume: voice.volume,
-      rate: voice.rate,
-      pitch: voice.pitch,
-      onEnd: () => setSpeaking(false),
-    });
-    setSpeaking(true);
+    toggleReading(readingKey, () =>
+      readAloud(content, {
+        key: readingKey,
+        voice: voice.outputVoice,
+        volume: voice.volume,
+        rate: voice.rate,
+        pitch: voice.pitch,
+      })
+    );
   }
 
   const btn =
@@ -163,10 +164,12 @@ export function MessageActions({
       {ttsSupported && (
         <button
           onClick={handleReadAloud}
-          title={speaking ? "Stop reading" : "Read aloud"}
-          className={btn}
+          title={!reading.active ? "Read aloud" : reading.paused ? "Continue reading" : "Pause reading"}
+          aria-label={!reading.active ? "Read aloud" : reading.paused ? "Continue reading" : "Pause reading"}
+          aria-pressed={reading.active && !reading.paused}
+          className={`${btn} ${reading.active ? "text-[var(--accent-from)]" : ""}`}
         >
-          {speaking ? <Square size={14} /> : <Volume2 size={14} />}
+          {!reading.active ? <Volume2 size={14} /> : reading.paused ? <Play size={14} /> : <Pause size={14} />}
         </button>
       )}
 

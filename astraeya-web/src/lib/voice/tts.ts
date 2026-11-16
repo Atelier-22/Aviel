@@ -30,6 +30,11 @@ export interface VoicePlayerOptions {
   onStart?: () => void;
   /** Called once when everything queued has been spoken (not after stop()). */
   onEnd?: () => void;
+  /**
+   * What is being read (a message id). Every speaker button for the same key
+   * shows this reading and can pause or continue it, including auto-read.
+   */
+  key?: string;
 }
 
 /** Pause after a piece when the server does not say; a natural breath. */
@@ -86,6 +91,8 @@ function audioContext(): AudioContext | null {
 /** Call from a click or key press so later playback is allowed to start. */
 export function unlockAudio() {
   const ctx = audioContext();
+  // A reading the person paused stays paused; only resumeReading() wakes it.
+  if (current?.isPaused) return;
   if (ctx?.state === "suspended") void ctx.resume();
   // A silent blip started inside the gesture is what Safari needs to unlock.
   if (ctx) {
@@ -119,6 +126,9 @@ export class VoicePlayer {
   private finished = false;
   private noticed = new Set<string>();
   private usingBrowser = false;
+  private paused = false;
+  /** Suspend/resume calls, in order, so the last tap always wins. */
+  private clock: Promise<unknown> = Promise.resolve();
   private energyData: Uint8Array<ArrayBuffer> | null = null;
 
   constructor(private opts: VoicePlayerOptions) {
@@ -158,7 +168,14 @@ export class VoicePlayer {
 
   /** Silences everything immediately and cancels what has not been made yet. */
   stop() {
+    const wasPaused = this.paused;
     this.stopped = true;
+    this.paused = false;
+    // The context is shared: leave it running for whatever plays next.
+    if (wasPaused && this.ctx) {
+      const ctx = this.ctx;
+      this.clock = this.clock.then(() => (ctx.state === "suspended" ? ctx.resume() : undefined)).catch(() => undefined);
+    }
     for (const a of this.aborts) a.abort();
     for (const s of this.sources) {
       try {
@@ -175,6 +192,49 @@ export class VoicePlayer {
 
   get isStopped() {
     return this.stopped;
+  }
+
+  /**
+   * Holds the sound exactly where it is. Audio already made waits on the
+   * paused clock and pieces still arriving queue behind it, so continuing
+   * picks up mid-word with nothing lost.
+   */
+  pause() {
+    if (this.stopped || this.paused) return;
+    this.paused = true;
+    this.settleClock();
+    if (this.usingBrowser && typeof window !== "undefined") window.speechSynthesis?.pause();
+  }
+
+  resume() {
+    if (this.stopped || !this.paused) return;
+    this.paused = false;
+    // Called inside the tap, which is what lets a phone browser start sound again.
+    if (this.ctx) void this.ctx.resume().catch(() => undefined);
+    this.settleClock();
+    if (this.usingBrowser && typeof window !== "undefined") window.speechSynthesis?.resume();
+  }
+
+  /**
+   * suspend() and resume() finish later, not at once; a state check made
+   * mid-way would skip the call and leave the sound stuck. Each tap queues
+   * its call behind the previous one and the result is re-checked against
+   * what the person asked for last.
+   */
+  private settleClock() {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    this.clock = this.clock
+      .then(async () => {
+        if (this.stopped) return;
+        if (this.paused && ctx.state === "running") await ctx.suspend();
+        else if (!this.paused && ctx.state === "suspended") await ctx.resume();
+      })
+      .catch(() => undefined);
+  }
+
+  get isPaused() {
+    return this.paused;
   }
 
   /** Loudness right now, 0–1, for animating the orb in live mode. */
@@ -203,6 +263,12 @@ export class VoicePlayer {
     const remaining = this.ctx ? Math.max(0, this.nextStart - this.ctx.currentTime) : 0;
     const finish = () => {
       if (this.finished || this.stopped) return;
+      // Paused, or still sound left on the (paused-then-resumed) clock: wait.
+      const left = this.ctx ? this.nextStart - this.ctx.currentTime : 0;
+      if (this.paused || left > 0.05) {
+        setTimeout(finish, this.paused ? 250 : Math.max(50, left * 1000 + 50));
+        return;
+      }
       if (this.usingBrowser && typeof window !== "undefined" && window.speechSynthesis?.speaking) {
         setTimeout(finish, 200);
         return;
@@ -288,7 +354,9 @@ export class VoicePlayer {
 
   private async schedule(buffer: AudioBuffer, pause: number) {
     if (!this.ctx || !this.gain || this.stopped) return;
-    if (this.ctx.state === "suspended") await this.ctx.resume().catch(() => undefined);
+    // A piece arriving while paused queues on the held clock; it must not
+    // wake the sound up.
+    if (this.ctx.state === "suspended" && !this.paused) await this.ctx.resume().catch(() => undefined);
     const source = this.ctx.createBufferSource();
     source.buffer = buffer;
     source.connect(this.gain);
@@ -334,6 +402,80 @@ let current: VoicePlayer | null = null;
 /** The interrupted reading's onEnd, so its button returns to "Read aloud". */
 let currentOnEnd: (() => void) | undefined;
 
+/** What is being read right now, for every speaker button to show. */
+export interface ReadingState {
+  key: string | null;
+  paused: boolean;
+}
+let reading: ReadingState = { key: null, paused: false };
+const readingListeners = new Set<() => void>();
+
+function setReading(next: ReadingState) {
+  if (next.key === reading.key && next.paused === reading.paused) return;
+  reading = next;
+  for (const l of readingListeners) l();
+}
+
+export function subscribeReading(listener: () => void): () => void {
+  readingListeners.add(listener);
+  return () => readingListeners.delete(listener);
+}
+
+export function getReading(): ReadingState {
+  return reading;
+}
+
+/** A reply's id changes when it is saved; the reading follows it. */
+export function renameReadingKey(from: string, to: string) {
+  if (reading.key === from) setReading({ ...reading, key: to });
+}
+
+export function pauseReading() {
+  if (!current || current.isStopped) return;
+  current.pause();
+  setReading({ ...reading, paused: true });
+}
+
+export function resumeReading() {
+  if (!current || current.isStopped) return;
+  unlockAudio();
+  current.resume();
+  setReading({ ...reading, paused: false });
+}
+
+/**
+ * The speaker button: pauses or continues what this key is reading, or,
+ * if it is not the one being read, starts it (stopping anything else).
+ */
+export function toggleReading(key: string, start: () => void) {
+  if (reading.key === key && current && !current.isStopped) {
+    if (reading.paused) resumeReading();
+    else pauseReading();
+    return;
+  }
+  start();
+}
+
+/**
+ * A player whose ending puts the shared state back to idle, checked by which
+ * player it is rather than by key (a reply's key changes when it is saved).
+ */
+function trackedPlayer(opts: VoicePlayerOptions): VoicePlayer {
+  const player: VoicePlayer = new VoicePlayer({
+    onNotice: announceVoiceNotice,
+    ...opts,
+    onEnd: () => {
+      if (current === player) {
+        current = null;
+        currentOnEnd = undefined;
+        setReading({ key: null, paused: false });
+      }
+      opts.onEnd?.();
+    },
+  });
+  return player;
+}
+
 /** Shown by <VoiceNotice/>, wherever read-aloud was started from. */
 export const VOICE_NOTICE_EVENT = "astraeya:voice-notice";
 
@@ -345,9 +487,10 @@ export function announceVoiceNotice(message: string) {
 export function readAloud(text: string, opts: VoicePlayerOptions): VoicePlayer {
   stopReading();
   unlockAudio();
-  const player = new VoicePlayer({ onNotice: announceVoiceNotice, ...opts });
+  const player = trackedPlayer(opts);
   current = player;
   currentOnEnd = opts.onEnd;
+  setReading({ key: opts.key ?? null, paused: false });
   player.enqueue(text);
   player.end();
   return player;
@@ -359,15 +502,17 @@ export function readAloud(text: string, opts: VoicePlayerOptions): VoicePlayer {
  */
 export function startReading(opts: VoicePlayerOptions): VoicePlayer {
   stopReading();
-  const player = new VoicePlayer({ onNotice: announceVoiceNotice, ...opts });
+  const player = trackedPlayer(opts);
   current = player;
   currentOnEnd = opts.onEnd;
+  setReading({ key: opts.key ?? null, paused: false });
   return player;
 }
 
 export function stopReading() {
   current?.stop();
   current = null;
+  setReading({ key: null, paused: false });
   const done = currentOnEnd;
   currentOnEnd = undefined;
   done?.();
