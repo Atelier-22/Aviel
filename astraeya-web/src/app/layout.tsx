@@ -3,6 +3,7 @@ import { Cormorant_Garamond } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
 import { WezitechCredit } from "@/components/brand/wezitech-credit";
+import { WakeServers } from "@/components/wake-servers";
 
 // The wordmark face, and nothing else. Scoped to a CSS variable rather than
 // applied to body so it cannot leak into interface copy, which stays on the
@@ -64,6 +65,7 @@ export default function RootLayout({
         <Providers>
           <div className="flex flex-1 flex-col">{children}</div>
           <WezitechCredit />
+          <WakeServers />
         </Providers>
       </body>
     </html>
