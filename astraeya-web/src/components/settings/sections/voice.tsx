@@ -18,6 +18,13 @@ import {
 import { useSection } from "../use-section";
 import { useSpeechSupport } from "@/lib/speech";
 import {
+  isHeadset,
+  listMicrophones,
+  pickMicrophone,
+  saveMicrophone,
+  savedMicrophone,
+} from "@/lib/voice/microphone";
+import {
   groupVoices,
   loadVoices,
   playPreview,
@@ -252,6 +259,7 @@ export function VoiceSection() {
       </SettingsCard>
 
       <SettingsCard title="Speaking to Astraeya">
+        <MicrophoneRow />
         <SettingsRow
           label="Microphone in the composer"
           icon={Mic}
@@ -426,5 +434,70 @@ export function VoiceSection() {
         </SettingsRow>
       </SettingsCard>
     </>
+  );
+}
+
+
+/**
+ * Which microphone to listen with. Automatic means the computer's built-in
+ * microphone, even when headphones are plugged in. Kept in this browser.
+ */
+function MicrophoneRow() {
+  const [devices, setDevices] = useState<{ deviceId: string; label: string }[]>([]);
+  const [chosen, setChosen] = useState<string>("");
+  const [needsPermission, setNeedsPermission] = useState(false);
+
+  async function refresh() {
+    const list = await listMicrophones().catch(() => []);
+    setDevices(list.map((d) => ({ deviceId: d.deviceId, label: d.label })));
+    setNeedsPermission(list.length > 0 && list.every((d) => !d.label));
+  }
+
+  useEffect(() => {
+    setChosen(savedMicrophone() ?? "");
+    void refresh();
+    const onChange = () => void refresh();
+    navigator.mediaDevices?.addEventListener?.("devicechange", onChange);
+    return () => navigator.mediaDevices?.removeEventListener?.("devicechange", onChange);
+  }, []);
+
+  async function allow() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((t) => t.stop());
+    } catch {
+      /* refused: names stay hidden */
+    }
+    await refresh();
+  }
+
+  const automatic = devices.find((d) => d.deviceId === pickMicrophone(devices, null));
+  const options = [
+    { value: "", label: automatic?.label ? `Automatic: ${automatic.label}` : "Automatic (built-in microphone)" },
+    ...devices
+      .filter((d) => d.label)
+      .map((d) => ({ value: d.deviceId, label: isHeadset(d.label) ? `${d.label} (headset)` : d.label })),
+  ];
+
+  return (
+    <SettingsRow
+      label="Microphone"
+      icon={Mic}
+      description="Automatic uses the computer's built-in microphone, even with headphones on, because headset microphones often hear you poorly. Choosing works in recent Chrome and Edge."
+    >
+      {needsPermission ? (
+        <SettingsButton onClick={() => void allow()}>Show microphones</SettingsButton>
+      ) : (
+        <SettingsDropdown
+          label="Microphone"
+          value={chosen}
+          onChange={(v) => {
+            setChosen(v);
+            saveMicrophone(v || null);
+          }}
+          options={options}
+        />
+      )}
+    </SettingsRow>
   );
 }

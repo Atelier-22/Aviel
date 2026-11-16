@@ -37,6 +37,7 @@ import {
 import { readAloud, startReading, stopReading, unlockAudio, type VoicePlayer } from "@/lib/voice/tts";
 import { SentenceStream } from "@/lib/voice/sentences";
 import { rememberGreeting } from "@/lib/voice/greeting";
+import { preferredMicrophone, startRecognitionOn } from "@/lib/voice/microphone";
 import { VoiceNotice } from "@/components/voice/voice-notice";
 import { MAX_DICTATION_MS, shouldRestartDictation } from "@/lib/voice/dictation";
 
@@ -130,6 +131,8 @@ export function ChatWindow({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  /** The microphone stream opened for dictation, stopped when dictation ends. */
+  const dictationStream = useRef<MediaStream | null>(null);
   // Read by the streaming loop, which is started once and must see the current
   // value rather than the one captured when it began.
   const settingsRef = useRef(settings);
@@ -240,6 +243,8 @@ export function ChatWindow({
     if (d.limitTimer) clearTimeout(d.limitTimer);
     d.restartTimer = d.limitTimer = null;
     recognitionRef.current = null;
+    dictationStream.current?.getTracks().forEach((t) => t.stop());
+    dictationStream.current = null;
     setIsListening(false);
     setInterim("");
   }, []);
@@ -323,11 +328,16 @@ export function ChatWindow({
     };
 
     recognitionRef.current = recognition;
-    try {
-      recognition.start();
-    } catch {
-      finishDictation();
-    }
+    // The chosen microphone (the built-in one by default), even with
+    // headphones in, where the browser allows choosing.
+    preferredMicrophone()
+      .catch(() => undefined)
+      .then((mic) => startRecognitionOn(recognition, mic))
+      .then((stream) => {
+        dictationStream.current?.getTracks().forEach((t) => t.stop());
+        dictationStream.current = stream;
+      })
+      .catch(() => finishDictation());
   };
 
   const startListening = useCallback(() => {

@@ -55,6 +55,19 @@ describe("SentenceStream", () => {
     assert.deepEqual(got, [[], ["Hello there."], ["How are you?"], [], [], ["I am fine."]]);
   });
 
+  it("hands out the opening clause early when asked, then only the rest of that sentence", () => {
+    const s = new SentenceStream({ eagerFirstClause: true });
+    const got: string[][] = [];
+    for (const chunk of ["Put the egg in a pot", ", cover it with cold", " water, and boil it. Then", " cool it."]) got.push(s.push(chunk));
+    got.push(s.end());
+    assert.deepEqual(got, [[], ["Put the egg in a pot,"], ["cover it with cold water, and boil it."], [], ["Then cool it."]]);
+  });
+
+  it("does not split early without the option, or when the clause is tiny", () => {
+    assert.deepEqual(new SentenceStream().push("Put the egg in a pot, cover it"), []);
+    assert.deepEqual(new SentenceStream({ eagerFirstClause: true }).push("Yes, it is"), []);
+  });
+
   it("waits for a code block to close before going on", () => {
     const s = new SentenceStream();
     assert.deepEqual(s.push("Here:\n```js\nconst a = 1. b = 2.\n"), []);

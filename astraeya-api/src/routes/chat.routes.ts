@@ -79,6 +79,8 @@ const chatSchema = z.object({
   excludeFromMemory: z.boolean().optional(),
   /** Per-turn override of the account's standing think mode (the effort). */
   thinkMode: z.enum(["fast", "balanced", "deep"]).optional(),
+  /** Sent by live voice: the reply will be spoken, so it should be short and plain. */
+  live: z.boolean().optional(),
   /** The model chosen in the composer: "advanced" (Athena 2.5), "standard" (Metis 3.0), "quick" (Lotus). */
   model: z.string().max(80).optional(),
 });
@@ -119,6 +121,14 @@ async function* streamWithSandboxRetry(
     });
   }
 }
+
+/**
+ * Live voice: the reply is heard, not read, and the person is waiting. The
+ * first words go straight to the voice, so they must be the answer.
+ */
+const LIVE_VOICE_NOTE = `
+
+This is a live spoken conversation: your reply is turned into speech the moment you write it, and the person is listening, not reading. Answer in one to three short, natural spoken sentences, starting with the answer itself; no greeting, no restating the question. Never use Markdown, lists, headings, tables, code blocks, emoji or links; say things the way a person would say them aloud. If more detail would help, give the key point and offer to go on.`;
 
 /** What the user is told the files are, if a reply made files but wrote nothing. */
 const FILES_ONLY_REPLY = "Here is your file.";
@@ -261,6 +271,7 @@ chatRouter.post(
       excludeFromMemory,
       thinkMode,
       model: requestedModel,
+      live,
     } = parsed.data;
 
     if (!message.trim() && attachments.length === 0) {
@@ -623,6 +634,7 @@ You cannot make images or videos on this model or server. If the user asks for o
     if (!fileMaking && !mediaGeneration && wantsVectorArt(message)) notes.push(VECTOR_ART_NOTE);
 
     if (session) notes.push(sessionPromptBlock(session));
+    if (live) notes.push(LIVE_VOICE_NOTE);
 
     // Fast asks for brevity, Deep asks for working. Balanced adds nothing,
     // because the baseline prompt already describes the normal case.

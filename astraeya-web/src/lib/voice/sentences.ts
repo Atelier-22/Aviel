@@ -178,6 +178,15 @@ export function speechPieces(sentences: string[], first = true): SpeechPiece[] {
 export class SentenceStream {
   private raw = "";
   private emitted = 0;
+  /** The opening clause, if it was handed out before its sentence finished. */
+  private head: string | null = null;
+
+  /**
+   * With `eagerFirstClause`, the reply's opening words up to the first comma
+   * are handed out as soon as they arrive, before the first sentence is
+   * finished, so speech can start sooner. Used by live voice.
+   */
+  constructor(private options: { eagerFirstClause?: boolean } = {}) {}
 
   push(chunk: string): string[] {
     this.raw += chunk;
@@ -192,8 +201,28 @@ export class SentenceStream {
   }
 
   private take(final: boolean): string[] {
-    const { sentences } = cut(speakableText(this.raw), final);
-    const fresh = sentences.slice(this.emitted);
+    const text = speakableText(this.raw);
+    const { sentences } = cut(text, final);
+
+    if (this.options.eagerFirstClause && this.emitted === 0 && this.head === null && sentences.length === 0 && !final) {
+      const opening = text.trimStart();
+      const m = opening.slice(12).match(/[,;:–—]\s/);
+      if (m && m.index !== undefined) {
+        const head = opening.slice(0, 12 + m.index + 1).trim();
+        if (!head.includes("\n") && /\p{L}/u.test(head)) {
+          this.head = head;
+          return [head];
+        }
+      }
+      return [];
+    }
+
+    let fresh = sentences.slice(this.emitted);
+    if (this.head && this.emitted === 0 && fresh.length && fresh[0].startsWith(this.head)) {
+      // The opening clause was already spoken: only the rest of that sentence is new.
+      const rest = fresh[0].slice(this.head.length).trim();
+      fresh = rest ? [rest, ...fresh.slice(1)] : fresh.slice(1);
+    }
     this.emitted = sentences.length;
     return fresh;
   }

@@ -42,3 +42,32 @@ describe("sentences (same file as the API's)", () => {
     assert.deepEqual(s.end(), ["Tw"]);
   });
 });
+
+import { isHeadset, pickMicrophone } from "./microphone";
+
+describe("choosing the microphone", () => {
+  const laptop = { deviceId: "a", label: "Microphone Array (Intel Smart Sound Technology)" };
+  const headset = { deviceId: "b", label: "Headset (Soundcore Life Q30 Hands-Free AG Audio)" };
+  const usb = { deviceId: "c", label: "USB Audio Device" };
+
+  it("prefers the built-in microphone over a headset", () => {
+    assert.equal(pickMicrophone([headset, laptop], null), "a");
+  });
+
+  it("falls back to any non-headset microphone, then the system default", () => {
+    assert.equal(pickMicrophone([headset, usb], null), "c");
+    assert.equal(pickMicrophone([headset], null), undefined);
+    assert.equal(pickMicrophone([], null), undefined);
+  });
+
+  it("keeps the person's own choice while that microphone is connected", () => {
+    assert.equal(pickMicrophone([laptop, headset], "b"), "b");
+    assert.equal(pickMicrophone([laptop], "b"), "a");
+  });
+
+  it("recognises headset names", () => {
+    assert.ok(isHeadset("AirPods Pro"));
+    assert.ok(isHeadset("Bluetooth Headset"));
+    assert.ok(!isHeadset("Microphone Array (Realtek(R) Audio)"));
+  });
+});

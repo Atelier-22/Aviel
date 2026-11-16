@@ -45,6 +45,7 @@ import {
 } from "@/lib/voice/voice-state";
 import { SentenceStream } from "@/lib/voice/sentences";
 import { readCachedGreeting } from "@/lib/voice/greeting";
+import { preferredMicrophone, startRecognitionOn } from "@/lib/voice/microphone";
 import {
   VoicePlayer,
   groupVoices,
@@ -74,7 +75,8 @@ export function LiveVoiceScreen({
 }: {
   conversationId?: string;
   sessionId?: string;
-  onExit: () => void;
+  /** Called with the conversation live mode spoke in, so the chat can open it. */
+  onExit: (conversationId?: string) => void;
 }) {
   const router = useRouter();
   const { settings, meta, update } = useSettingsStore();
@@ -84,6 +86,9 @@ export function LiveVoiceScreen({
   const greetedRef = useRef(false);
   /** Whether the microphone is open, so the greeting knows to hand over to listening. */
   const micReadyRef = useRef(false);
+  /** The microphone in use, and the stream opened for speech recognition on it. */
+  const micRef = useRef<string | undefined>(undefined);
+  const recStreamRef = useRef<MediaStream | null>(null);
   /** A note for the person, e.g. that the browser's backup voice is reading. */
   const [voiceNotice, setVoiceNotice] = useState<string | null>(null);
 
@@ -190,6 +195,8 @@ export function LiveVoiceScreen({
     interruptRaf.current = 0;
     recognitionRef.current?.abort();
     recognitionRef.current = null;
+    recStreamRef.current?.getTracks().forEach((t) => t.stop());
+    recStreamRef.current = null;
     abortRef.current?.abort();
     playerRef.current?.stop();
     playerRef.current = null;
@@ -390,7 +397,9 @@ export function LiveVoiceScreen({
       abortRef.current = controller;
       // Made now, so the first sentence is spoken while the rest still streams.
       const player = beginSpeech();
-      const sentences = new SentenceStream();
+      // The opening words are spoken as soon as they arrive, before the
+      // first sentence is even finished.
+      const sentences = new SentenceStream({ eagerFirstClause: true });
 
       try {
         const res = await apiStream(
@@ -400,6 +409,9 @@ export function LiveVoiceScreen({
             conversationId: convRef.current,
             webSearchEnabled: false,
             excludeFromMemory: !settingsRef.current.liveVoice.saveTranscript,
+            // Short, plain spoken answers that start with the answer itself.
+            live: true,
+            model: settingsRef.current.ai.defaultModel,
           },
           controller.signal
         );
@@ -507,6 +519,8 @@ export function LiveVoiceScreen({
 
     recognition.onend = () => {
       recognitionRef.current = null;
+      recStreamRef.current?.getTracks().forEach((t) => t.stop());
+      recStreamRef.current = null;
       // The recogniser stops on its own after a pause. If we are still meant
       // to be listening, restart it — that is what makes the session
       // continuous rather than one-shot.
@@ -518,14 +532,19 @@ export function LiveVoiceScreen({
     };
 
     recognitionRef.current = recognition;
-    try {
-      recognition.start();
-      engineRef.current?.setMuted(false);
-      playCue("start", v);
-    } catch {
-      // start() throws if called while already running; the existing session
-      // is the one we want, so this is not an error.
-    }
+    // On the chosen microphone (the built-in one by default) where the
+    // browser allows it, so headphones do not take over.
+    startRecognitionOn(recognition, micRef.current)
+      .then((stream) => {
+        recStreamRef.current?.getTracks().forEach((t) => t.stop());
+        recStreamRef.current = stream;
+        engineRef.current?.setMuted(false);
+        playCue("start", v);
+      })
+      .catch(() => {
+        // start() throws if called while already running; the existing
+        // session is the one we want, so this is not an error.
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [send, setState]);
 
@@ -566,11 +585,15 @@ export function LiveVoiceScreen({
 
     const engine = new AudioEngine();
     engineRef.current = engine;
+    micRef.current = await preferredMicrophone().catch(() => undefined);
 
     const status = await engine.start({
+      deviceId: micRef.current,
       noiseReduction: settingsRef.current.voice.noiseReduction,
       highQuality: settingsRef.current.voice.audioQuality === "high",
-      silenceMs: settingsRef.current.liveVoice.voiceActivityDetection ? 900 : 4000,
+      // How long a pause ends the turn. Short enough to feel instant, long
+      // enough not to cut someone off mid-thought.
+      silenceMs: settingsRef.current.liveVoice.voiceActivityDetection ? 650 : 4000,
       onSpeechEnd: () => {
         // Voice-activity detection is what ends a turn without a button.
         if (stateRef.current !== "listening") return;
@@ -587,6 +610,10 @@ export function LiveVoiceScreen({
       setState("error");
       return;
     }
+
+    // Names of microphones are only visible once permission is given, so the
+    // built-in microphone can be recognised now even if it could not before.
+    if (!micRef.current) micRef.current = await preferredMicrophone().catch(() => undefined);
 
     // The session record is created only once the microphone is actually open.
     // Creating it before would leave a trail of empty sessions every time
@@ -707,7 +734,7 @@ export function LiveVoiceScreen({
       <header className="voice-header">
         <button
           type="button"
-          onClick={() => { end(); onExit(); }}
+          onClick={() => { end(); onExit(convRef.current ?? undefined); }}
           aria-label="Leave voice mode"
           className="voice-icon-btn"
         >
@@ -848,7 +875,7 @@ export function LiveVoiceScreen({
 
         <button
           type="button"
-          onClick={() => { end(); onExit(); }}
+          onClick={() => { end(); onExit(convRef.current ?? undefined); }}
           className="voice-side-btn"
         >
           <X size={19} />

@@ -72,7 +72,7 @@ export class AudioEngine {
   muted = false;
 
   async start(
-    opts: VoiceActivityOptions & { noiseReduction?: boolean; highQuality?: boolean } = {}
+    opts: VoiceActivityOptions & { noiseReduction?: boolean; highQuality?: boolean; deviceId?: string } = {}
   ): Promise<EngineStatus> {
     this.opts = opts;
 
@@ -101,6 +101,9 @@ export class AudioEngine {
             noiseSuppression: opts.noiseReduction ?? true,
             autoGainControl: true,
             ...(opts.highQuality ? { sampleRate: 48000 } : {}),
+            // The chosen microphone (by default the built-in one), not
+            // whatever the system switched to when headphones went in.
+            ...(opts.deviceId ? { deviceId: { exact: opts.deviceId } } : {}),
           },
         }),
         new Promise<never>((_, reject) =>

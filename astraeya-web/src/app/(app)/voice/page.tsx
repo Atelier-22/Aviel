@@ -31,11 +31,17 @@ function VoiceRoute() {
     <LiveVoiceScreen
       conversationId={conversationId}
       sessionId={sessionId}
-      onExit={() => {
-        // Back where they came from when there is history, so exiting voice
-        // returns to the conversation rather than to a new empty chat.
-        if (window.history.length > 1) router.back();
-        else router.push(conversationId ? `/chat/${conversationId}` : "/chat");
+      onExit={(spokenIn) => {
+        // Always back to the conversation that was just spoken, fresh from
+        // the server, so everything said in live mode is there in the chat
+        // and the chat carries straight on from it.
+        const id = spokenIn ?? conversationId;
+        if (id) {
+          router.replace(`/chat/${id}`);
+          router.refresh();
+        } else {
+          router.replace("/chat");
+        }
       }}
     />
   );

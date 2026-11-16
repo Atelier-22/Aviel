@@ -37,7 +37,8 @@ export interface SpeechRecognitionLike {
   continuous: boolean;
   interimResults: boolean;
   maxAlternatives: number;
-  start(): void;
+  /** Recent Chrome and Edge accept an audio track: the microphone to listen with. */
+  start(track?: MediaStreamTrack): void;
   stop(): void;
   abort(): void;
   onresult:
