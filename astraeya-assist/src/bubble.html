@@ -1,0 +1,51 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src http: https:; media-src blob: data:; style-src 'self' 'unsafe-inline'; img-src 'self' data:" />
+<style>
+  html, body { margin: 0; background: transparent; overflow: hidden; font-family: "Segoe UI", system-ui, sans-serif; user-select: none; }
+  .wrap { display: flex; align-items: flex-start; gap: 10px; padding: 6px; }
+  .orb {
+    width: 54px; height: 54px; flex: none; border-radius: 50%;
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 6px 22px rgba(15, 30, 70, 0.28);
+    display: grid; place-items: center; position: relative;
+  }
+  .orb::after {
+    content: ""; position: absolute; inset: -4px; border-radius: 50%;
+    border: 2px solid rgba(30, 107, 255, 0); transition: border-color 0.2s;
+  }
+  body[data-state="hearing"] .orb::after { border-color: rgba(30, 107, 255, 0.55); animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { transform: scale(1.08); } }
+  .orb svg { width: 40px; height: 40px; }
+  .ink { fill: #111; }
+  .ring-tilt { transform-box: fill-box; transform-origin: center; }
+  body[data-state="thinking"] .ring-tilt, body[data-state="speaking"] .ring-tilt { animation: tilt 0.8s ease-in-out infinite alternate; }
+  @keyframes tilt { from { transform: scaleY(1); } to { transform: scaleY(0.55); } }
+  .card {
+    max-width: 250px; padding: 8px 11px; border-radius: 14px;
+    background: rgba(255, 255, 255, 0.97); color: #1b1f2a;
+    box-shadow: 0 6px 22px rgba(15, 30, 70, 0.22); font-size: 12.5px; line-height: 1.38;
+    display: none;
+  }
+  .card.show { display: block; }
+  .you { color: #5d6474; font-size: 11.5px; margin-bottom: 3px; }
+  .note { color: #1e6bff; font-size: 11.5px; margin-top: 4px; }
+  .say { max-height: 86px; overflow: hidden; }
+</style>
+</head>
+<body data-state="off">
+  <div class="wrap">
+    <div class="orb"><svg id="mark" aria-label="Astra Assist"></svg></div>
+    <div class="card" id="card">
+      <div class="you" id="you"></div>
+      <div class="say" id="say"></div>
+      <div class="note" id="note"></div>
+    </div>
+  </div>
+  <script src="mark.js"></script>
+  <script src="speech.js"></script>
+  <script src="bubble.js"></script>
+</body>
+</html>

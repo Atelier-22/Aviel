@@ -1,0 +1,60 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:" />
+<title>Astra Assist</title>
+<style>
+  :root { color-scheme: light dark; --blue: #1e6bff; }
+  body { margin: 0; font-family: "Segoe UI", system-ui, sans-serif; background: #f6f8fb; color: #1b1f2a; }
+  @media (prefers-color-scheme: dark) { body { background: #12151c; color: #e8ebf2; } .card { background: #1b2030 !important; } input { background: #12151c !important; color: #e8ebf2 !important; border-color: #2c3346 !important; } }
+  main { padding: 26px 30px; }
+  h1 { font-size: 22px; margin: 10px 0 2px; font-weight: 600; }
+  h1 span { color: var(--blue); }
+  p { font-size: 13.5px; line-height: 1.5; margin: 6px 0; color: #5d6474; }
+  .card { background: #fff; border-radius: 14px; padding: 16px; margin-top: 16px; box-shadow: 0 2px 10px rgba(0,0,0,0.06); }
+  label { display: block; font-size: 12.5px; margin: 10px 0 4px; font-weight: 600; }
+  input { width: 100%; box-sizing: border-box; padding: 9px 10px; border-radius: 9px; border: 1px solid #d5dae4; font-size: 14px; }
+  button { margin-top: 14px; width: 100%; padding: 10px; border: 0; border-radius: 10px; background: var(--blue); color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; }
+  button.secondary { background: transparent; color: var(--blue); border: 1px solid var(--blue); }
+  .err { color: #d4312b; font-size: 12.5px; min-height: 16px; margin-top: 8px; }
+  kbd { font-family: inherit; font-size: 12px; padding: 2px 6px; border: 1px solid #c9d0dd; border-bottom-width: 2px; border-radius: 5px; background: #fff; color: #1b1f2a; }
+  .done { display: none; }
+  ul { padding-left: 18px; margin: 6px 0; font-size: 13px; line-height: 1.6; color: #5d6474; }
+</style>
+</head>
+<body>
+<main>
+  <img src="../assets/icon.png" width="44" height="44" alt="" />
+  <h1>Astra <span>Assist</span></h1>
+  <p>Astraeya on your PC. Turn it on, talk, and it looks at your screen and helps out loud.</p>
+
+  <div class="card" id="signin">
+    <label for="email">Astraeya email</label>
+    <input id="email" type="email" autocomplete="email" />
+    <label for="password">Password</label>
+    <input id="password" type="password" autocomplete="current-password" />
+    <details style="margin-top:8px;font-size:12.5px;color:#5d6474">
+      <summary>Server</summary>
+      <input id="server" placeholder="http://localhost:4000" style="margin-top:6px" />
+    </details>
+    <button id="go">Sign in</button>
+    <div class="err" id="err"></div>
+    <p style="font-size:12px">No account? Create one in the Astraeya chat first.</p>
+  </div>
+
+  <div class="card done" id="done">
+    <p style="color:inherit;font-size:15px;margin:0 0 6px"><strong id="hello">You're set.</strong></p>
+    <ul>
+      <li>Press <kbd id="keys">Windows + Ctrl + A</kbd> to turn Astra Assist on, and again to turn it off.</li>
+      <li>Then just talk: "What's wrong with this command?", "Reply to this email professionally".</li>
+      <li>Drafts go to your clipboard: press <kbd>Ctrl</kbd> + <kbd>V</kbd> to paste.</li>
+      <li>Say "turn off" or press the keys again to stop.</li>
+    </ul>
+    <p style="font-size:12px">While it's on, each question sends a screenshot of your screen to Astraeya to be read. It's used for that answer only and not stored. Nothing is captured while it's off.</p>
+    <button class="secondary" id="out">Sign out</button>
+  </div>
+</main>
+<script src="setup.js"></script>
+</body>
+</html>

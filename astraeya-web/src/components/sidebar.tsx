@@ -9,6 +9,7 @@ import {
   Search,
   FolderKanban,
   Library,
+  MonitorSmartphone,
   Settings,
   LogOut,
   PanelLeftClose,
@@ -39,6 +40,7 @@ type ConversationSummary = {
 const navItems = [
   { href: "/projects", label: "Projects", icon: FolderKanban },
   { href: "/library", label: "Library", icon: Library },
+  { href: "/assist", label: "Astra Assist", icon: MonitorSmartphone },
 ];
 
 const COLLAPSED_KEY = "astraeya.sidebar.collapsed";

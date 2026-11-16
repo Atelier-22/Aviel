@@ -72,3 +72,8 @@ voices/
 astraeya-voice/.venv/
 astraeya-voice/models/
 astraeya-voice/__pycache__/
+
+# --- Astra Assist: dependencies, build output, and the installer copy served locally ---
+astraeya-assist/node_modules/
+astraeya-assist/dist/
+astraeya-web/public/downloads/

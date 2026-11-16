@@ -1,0 +1,26 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'" />
+<style>
+  html, body { margin: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; font-family: "Segoe UI", sans-serif; }
+  #spot { position: absolute; width: 0; height: 0; display: none; }
+  #spot .ring {
+    position: absolute; left: -26px; top: -26px; width: 52px; height: 52px; border-radius: 50%;
+    border: 3px solid #1e6bff; box-shadow: 0 0 0 4px rgba(30, 107, 255, 0.2);
+    animation: ping 1.1s ease-out infinite;
+  }
+  #spot .dot { position: absolute; left: -6px; top: -6px; width: 12px; height: 12px; border-radius: 50%; background: #1e6bff; }
+  #spot .label {
+    position: absolute; left: 30px; top: -14px; white-space: nowrap; padding: 4px 9px; border-radius: 8px;
+    background: #1e6bff; color: #fff; font-size: 13px; font-weight: 600; box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+  }
+  @keyframes ping { from { transform: scale(0.6); opacity: 1; } to { transform: scale(1.5); opacity: 0.15; } }
+</style>
+</head>
+<body>
+  <div id="spot"><div class="ring"></div><div class="dot"></div><div class="label" id="label"></div></div>
+  <script src="pointer.js"></script>
+</body>
+</html>

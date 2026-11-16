@@ -1,0 +1,41 @@
+{
+  "name": "astra-assist",
+  "productName": "Astra Assist",
+  "version": "0.1.0",
+  "description": "Astraeya on your Windows PC: press Windows + Ctrl + A, talk, and it sees your screen and helps.",
+  "main": "src/main.js",
+  "private": true,
+  "author": "Wezitech",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis"
+  },
+  "build": {
+    "appId": "com.wezitech.astraassist",
+    "productName": "Astra Assist",
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Astra Assist",
+      "artifactName": "AstraAssistSetup-${version}.exe"
+    },
+    "directories": {
+      "output": "dist"
+    }
+  },
+  "devDependencies": {
+    "electron": "^39.8.10",
+    "electron-builder": "^26.18.0"
+  }
+}
