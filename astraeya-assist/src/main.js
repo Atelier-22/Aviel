@@ -39,6 +39,15 @@ let followTimer = null;
 let pointerTimer = null;
 let lastCursor = { x: -1, y: -1 };
 let lastAnchor = "";
+/** Where the bubble is drawn now; it eases towards where it should be. */
+let shown = null;
+let lastPlaced = { x: NaN, y: NaN };
+/**
+ * How much of the remaining distance the bubble covers each frame, as the
+ * cursor dot on wezitech.vercel.app does (one sixth): it glides after the
+ * cursor and settles, instead of jumping.
+ */
+const EASE = 1 / 6;
 
 /** The bubble window: the logo in one corner, the text card beside it. */
 const BUBBLE_W = 380;
@@ -153,9 +162,10 @@ function createPointer() {
 function follow(force = false) {
   if (!bubbleWin || bubbleWin.isDestroyed()) return;
   const p = screen.getCursorScreenPoint();
-  // Only when the cursor has actually moved: moving a window for nothing
-  // makes Windows redraw it.
-  if (!force && p.x === lastCursor.x && p.y === lastCursor.y) return;
+  const moved = p.x !== lastCursor.x || p.y !== lastCursor.y;
+  // Nothing to do once the cursor is still and the bubble has caught up:
+  // moving a window for nothing makes Windows redraw it.
+  if (!force && !moved && shown && shown.settled) return;
   lastCursor = p;
   const wa = screen.getDisplayNearestPoint(p).workArea;
   const right = wa.x + wa.width;
@@ -171,9 +181,23 @@ function follow(force = false) {
   const x = cardRight ? orbLeft : orbLeft + ORB - BUBBLE_W;
   const y = cardBelow ? orbTop : orbTop + ORB - BUBBLE_H;
 
+  // Ease towards the target; on (force) jump straight there.
+  if (force || !shown) shown = { x, y, settled: true };
+  else {
+    shown.x += (x - shown.x) * EASE;
+    shown.y += (y - shown.y) * EASE;
+    shown.settled = Math.abs(x - shown.x) < 0.5 && Math.abs(y - shown.y) < 0.5;
+    if (shown.settled) { shown.x = x; shown.y = y; }
+  }
+  const nx = Math.round(shown.x);
+  const ny = Math.round(shown.y);
   // setBounds with the size every time: at 150% scaling, moving a window
-  // without it makes Windows grow it a few pixels at a time.
-  bubbleWin.setBounds({ x: Math.round(x), y: Math.round(y), width: BUBBLE_W, height: BUBBLE_H }, false);
+  // without it makes Windows grow it a few pixels at a time. Only when the
+  // rounded position actually changes.
+  if (nx !== lastPlaced.x || ny !== lastPlaced.y) {
+    bubbleWin.setBounds({ x: nx, y: ny, width: BUBBLE_W, height: BUBBLE_H }, false);
+    lastPlaced = { x: nx, y: ny };
+  }
   const anchor = `${cardRight ? "left" : "right"}-${cardBelow ? "top" : "bottom"}`;
   if (anchor !== lastAnchor) {
     lastAnchor = anchor;
@@ -194,12 +218,14 @@ function setActive(on) {
   if (on) {
     follow(true);
     bubbleWin.showInactive();
-    // Checked 60 times a second; the window only moves when the cursor did.
+    // Checked 60 times a second; the window only moves while the cursor
+    // moves or the bubble is still gliding after it.
     followTimer = setInterval(follow, 16);
     bubbleWin.webContents.send("assist:start");
   } else {
     clearInterval(followTimer);
     followTimer = null;
+    shown = null;
     bubbleWin.webContents.send("assist:stop");
     bubbleWin.hide();
     clearTimeout(pointerTimer);
