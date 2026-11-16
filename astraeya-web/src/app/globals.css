@@ -427,6 +427,13 @@ body {
   text-align: left;
   vertical-align: top;
   border-bottom: 1px solid var(--border-subtle);
+  /* Replies break long strings anywhere so links never overflow, but in a
+     table that splits words mid-way on a phone ("Read/wr | ite"). Cells keep
+     whole words and a readable width; a table wider than the screen scrolls
+     inside its .table-scroll box instead. */
+  overflow-wrap: normal;
+  word-break: normal;
+  min-width: 6.5rem;
 }
 
 .prose-astraeya th {
