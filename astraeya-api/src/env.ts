@@ -42,6 +42,9 @@ const envSchema = z.object({
   VOICE_SERVICE_URL: z.string().default("http://127.0.0.1:5005"),
   // Shared secret the voice server checks, so only this API can use it.
   VOICE_SECRET: z.string().optional(),
+  // Optional separate speech-to-text server (the voice server started with
+  // VOICE_STT_ONLY=1). Unset: the main voice server does speech-to-text too.
+  VOICE_STT_URL: z.string().optional(),
 
   // Comma-separated list of browser origins allowed to call this API.
   // Native mobile clients send no Origin header and are always allowed.

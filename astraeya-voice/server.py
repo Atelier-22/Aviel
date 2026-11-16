@@ -21,6 +21,7 @@ Settings (environment):
     VOICE_DEVICE      cpu (default) or cuda (NVIDIA GPU, with onnxruntime-gpu)
     VOICE_STT_MODEL   Whisper model for /transcribe: base.en (default) or small.en (better, slower)
     VOICE_STT_DIR     where Whisper models are kept (default ./models/whisper)
+    VOICE_STT_ONLY    1 = speech-to-text only, no voices (a small second server)
     PORT              default 5005
 """
 
@@ -59,6 +60,7 @@ KOKORO_MODEL = os.environ.get("VOICE_KOKORO_MODEL", "kokoro-v1.0.onnx")
 # times faster than it plays, so speech starts at once and never pauses.
 DEVICE = os.environ.get("VOICE_DEVICE", "cpu").lower()
 STT_MODEL = os.environ.get("VOICE_STT_MODEL", "base.en")
+STT_ONLY = os.environ.get("VOICE_STT_ONLY") == "1"
 STT_DIR = Path(os.environ.get("VOICE_STT_DIR", HERE / "models" / "whisper")).resolve()
 
 
@@ -130,6 +132,10 @@ class Engines:
 
     def load(self) -> None:
         started = time.perf_counter()
+        if STT_ONLY:
+            self.load_whisper()
+            print(f"[voice] speech-to-text only ({STT_MODEL}) ready in {time.perf_counter() - started:.1f}s", flush=True)
+            return
         self.kokoro = load_kokoro()
         # Warm-up: the first run is slow while onnxruntime plans the graph.
         self.kokoro.create("Ready.", voice=DEFAULT_VOICE, speed=1.0, lang="en-us")
@@ -137,8 +143,12 @@ class Engines:
             if voice_id in VOICES and VOICES[voice_id]["engine"] == "piper":
                 self.piper_voice(voice_id)
                 list(self.piper[voice_id].synthesize("Ready."))
-        # Speech to text for Astra Assist. Loaded after the voices; a failure
-        # here leaves speaking working and only /transcribe unavailable.
+        self.load_whisper()
+        print(f"[voice] Kokoro ({KOKORO_MODEL}) and {len(PRELOAD)} Piper voice(s) ready in {time.perf_counter() - started:.1f}s, {WORKERS} parallel x {THREADS} thread(s) on {providers()[0]}, models in {MODELS}", flush=True)
+
+    def load_whisper(self) -> None:
+        # Speech to text for Astra Assist. A failure here leaves speaking
+        # working and only /transcribe unavailable.
         try:
             from faster_whisper import WhisperModel
 
@@ -151,7 +161,6 @@ class Engines:
             )
         except Exception as err:  # noqa: BLE001 - reported, not fatal
             print(f"[voice] speech-to-text unavailable: {err}", flush=True)
-        print(f"[voice] Kokoro ({KOKORO_MODEL}) and {len(PRELOAD)} Piper voice(s) ready in {time.perf_counter() - started:.1f}s, {WORKERS} parallel x {THREADS} thread(s) on {providers()[0]}, models in {MODELS}", flush=True)
 
     def piper_voice(self, voice_id: str) -> PiperVoice:
         with self.load_lock:
@@ -278,7 +287,7 @@ def voices(x_voice_secret: str | None = Header(default=None)) -> dict:
 
 @app.get("/health")
 def health() -> dict:
-    if engines.kokoro is None:
+    if engines.kokoro is None and not (STT_ONLY and engines.whisper is not None):
         raise HTTPException(status_code=503, detail="loading")
     return {
         "status": "ok",

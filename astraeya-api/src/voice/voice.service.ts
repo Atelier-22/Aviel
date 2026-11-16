@@ -150,9 +150,11 @@ export interface Transcript {
 
 /** WAV audio in, the words out. */
 export async function transcribe(wav: Buffer): Promise<Transcript> {
+  const raw = (env.VOICE_STT_URL ?? "").trim().replace(/\/$/, "");
+  const sttUrl = raw ? (/^https?:\/\//.test(raw) ? raw : `http://${raw}`) : baseUrl();
   let res: Response;
   try {
-    res = await fetch(`${baseUrl()}/transcribe`, {
+    res = await fetch(`${sttUrl}/transcribe`, {
       method: "POST",
       headers: {
         "Content-Type": "audio/wav",
