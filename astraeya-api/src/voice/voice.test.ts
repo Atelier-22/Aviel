@@ -251,7 +251,8 @@ describe("numbers are said the way a person says them", () => {
   });
 });
 
-import { wavSeconds } from "./hosted";
+import { hostedSpeak, hostedSpeechReady, resetHostedPause, wavSeconds } from "./hosted";
+import { env } from "../env";
 
 describe("reading a WAV's length", () => {
   it("finds the data chunk and divides by the byte rate", () => {
@@ -262,5 +263,23 @@ describe("reading a WAV's length", () => {
     wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write("data", 36); wav.writeUInt32LE(samples * 2, 40);
     assert.equal(wavSeconds(wav), 0.5);
     assert.equal(wavSeconds(Buffer.from("not audio")), 0);
+  });
+});
+
+describe("hosted speech after a refusal", () => {
+  it("is skipped instead of making every reply wait", async () => {
+    const saved = [env.DEEPINFRA_API_KEY, globalThis.fetch] as const;
+    (env as { DEEPINFRA_API_KEY?: string }).DEEPINFRA_API_KEY = "test";
+    globalThis.fetch = (async () => new Response('{"detail":"no balance"}', { status: 402 })) as typeof fetch;
+    try {
+      resetHostedPause();
+      assert.equal(hostedSpeechReady(), true);
+      await assert.rejects(hostedSpeak("Hello", "af_heart"), /402/);
+      assert.equal(hostedSpeechReady(), false);
+    } finally {
+      (env as { DEEPINFRA_API_KEY?: string }).DEEPINFRA_API_KEY = saved[0];
+      globalThis.fetch = saved[1];
+      resetHostedPause();
+    }
   });
 });

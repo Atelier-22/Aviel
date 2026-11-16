@@ -17,6 +17,41 @@ export function hostedSpeechEnabled(): boolean {
   return Boolean(env.DEEPINFRA_API_KEY);
 }
 
+/**
+ * After a failure the provider is skipped for a while, so replies don't each
+ * wait seconds for a refusal before our own server speaks. No credit or a bad
+ * key (402, 401, 403) pauses it for 5 minutes; anything else for 30 seconds.
+ */
+let pausedUntil = 0;
+function noteFailure(status?: number): void {
+  pausedUntil = Date.now() + (status === 401 || status === 402 || status === 403 ? 5 * 60_000 : 30_000);
+}
+
+/** Switched on, and not paused after a recent failure. */
+export function hostedSpeechReady(): boolean {
+  return hostedSpeechEnabled() && Date.now() >= pausedUntil;
+}
+
+/** For tests. */
+export function resetHostedPause(): void {
+  pausedUntil = 0;
+}
+
+async function call(path: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  let res: Response;
+  try {
+    res = await fetch(`${BASE()}${path}`, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+  } catch (err) {
+    noteFailure();
+    throw err;
+  }
+  if (!res.ok) {
+    noteFailure(res.status);
+    throw new Error(`hosted ${path} ${res.status}: ${(await res.text().catch(() => "")).slice(0, 200)}`);
+  }
+  return res;
+}
+
 /** Seconds of audio in a PCM WAV, read from its header. */
 export function wavSeconds(wav: Buffer): number {
   if (wav.length < 44 || wav.toString("ascii", 0, 4) !== "RIFF") return 0;
@@ -34,15 +69,20 @@ export function wavSeconds(wav: Buffer): number {
 
 /** Heart (or any Kokoro voice) from the hosted Kokoro model, as WAV. */
 export async function hostedSpeak(text: string, voice: string): Promise<Buffer> {
-  const res = await fetch(`${BASE()}/audio/speech`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${env.DEEPINFRA_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "hexgrad/Kokoro-82M", input: text, voice, response_format: "wav", speed: 1.0 }),
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!res.ok) throw new Error(`hosted speech ${res.status}: ${(await res.text().catch(() => "")).slice(0, 200)}`);
+  const res = await call(
+    "/audio/speech",
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${env.DEEPINFRA_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "hexgrad/Kokoro-82M", input: text, voice, response_format: "wav", speed: 1.0 }),
+    },
+    8_000,
+  );
   const wav = Buffer.from(await res.arrayBuffer());
-  if (wavSeconds(wav) <= 0) throw new Error("hosted speech returned no audio");
+  if (wavSeconds(wav) <= 0) {
+    noteFailure();
+    throw new Error("hosted speech returned no audio");
+  }
   return wav;
 }
 
@@ -52,13 +92,7 @@ export async function hostedTranscribe(wav: Buffer): Promise<string> {
   form.append("file", new Blob([new Uint8Array(wav)], { type: "audio/wav" }), "speech.wav");
   form.append("model", "openai/whisper-large-v3-turbo");
   form.append("language", "en");
-  const res = await fetch(`${BASE()}/audio/transcriptions`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${env.DEEPINFRA_API_KEY}` },
-    body: form,
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (!res.ok) throw new Error(`hosted transcription ${res.status}: ${(await res.text().catch(() => "")).slice(0, 200)}`);
+  const res = await call("/audio/transcriptions", { method: "POST", headers: { Authorization: `Bearer ${env.DEEPINFRA_API_KEY}` }, body: form }, 10_000);
   const body = (await res.json()) as { text?: string };
   return (body.text ?? "").trim();
 }
