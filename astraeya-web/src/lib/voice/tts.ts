@@ -391,6 +391,8 @@ export interface AstraeyaVoice {
 export interface VoiceList {
   default: string;
   available: boolean;
+  /** Speech is made by the hosted provider (DeepInfra), not only our server. */
+  hosted?: boolean;
   voices: AstraeyaVoice[];
 }
 

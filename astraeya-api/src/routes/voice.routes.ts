@@ -7,6 +7,7 @@ import { getPlatformConfig } from "../settings/platform";
 import { loadSettings } from "../settings/store";
 import { DEFAULT_VOICE, VOICES, normalizeVoiceId, voiceLabel } from "../voice/catalogue";
 import { speechPieces, splitSentences } from "../voice/sentences";
+import { hostedSpeechEnabled } from "../voice/hosted";
 import {
   VoiceUnavailable,
   greetingFor,
@@ -55,7 +56,9 @@ voiceRouter.get(
   asyncHandler(async (_req, res) => {
     res.json({
       default: DEFAULT_VOICE,
-      available: await voiceServiceUp(),
+      available: hostedSpeechEnabled() || (await voiceServiceUp()),
+      // Speech made by the hosted provider: the apps say so in their privacy text.
+      hosted: hostedSpeechEnabled(),
       voices: VOICES.map((v) => ({ ...v, label: voiceLabel(v) })),
     });
   })

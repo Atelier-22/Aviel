@@ -45,6 +45,11 @@ const envSchema = z.object({
   // Optional separate speech-to-text server (the voice server started with
   // VOICE_STT_ONLY=1). Unset: the main voice server does speech-to-text too.
   VOICE_STT_URL: z.string().optional(),
+  // Hosted speech (DeepInfra: the same Kokoro voices and Whisper, on GPUs).
+  // Set it and speaking and listening become near-instant; unset, Astraeya's
+  // own voice server does both. Reply text and recordings then go to DeepInfra.
+  DEEPINFRA_API_KEY: z.string().optional(),
+  DEEPINFRA_BASE_URL: z.string().optional(),
 
   // Comma-separated list of browser origins allowed to call this API.
   // Native mobile clients send no Origin header and are always allowed.

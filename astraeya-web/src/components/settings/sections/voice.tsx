@@ -54,6 +54,7 @@ export function VoiceSection() {
   const { sttSupported } = useSpeechSupport();
   const [voices, setVoices] = useState<AstraeyaVoice[]>([]);
   const [serviceUp, setServiceUp] = useState<boolean | null>(null);
+  const [hosted, setHosted] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -61,6 +62,7 @@ export function VoiceSection() {
       .then((list) => {
         setVoices(list.voices);
         setServiceUp(list.available);
+        setHosted(Boolean(list.hosted));
       })
       .catch(() => setServiceUp(false));
   }, []);
@@ -152,13 +154,25 @@ export function VoiceSection() {
       </div>
 
       <Callout title="Where voice runs">
-        When you speak to Astraeya, your browser turns your words into text; no
-        recording of your voice is uploaded. When Astraeya reads a reply aloud,
-        the text of that reply is sent to Astraeya&apos;s own server, which makes
-        the speech and sends it back. Nothing is sent to any other company, and
-        the audio is not stored. If that server is ever unavailable, your
-        browser&apos;s built-in voice reads instead, and you&apos;ll see a note
-        saying so.
+        When you speak to Astraeya in the browser, your browser turns your words
+        into text; no recording of your voice is uploaded.{" "}
+        {hosted ? (
+          <>
+            When Astraeya reads a reply aloud, the text of that reply is sent to
+            DeepInfra, a speech provider that runs the same voices on fast
+            servers, so speech starts instantly. In Astra Assist, your spoken
+            question is also sent there to be turned into text. Neither is stored
+            by Astraeya.
+          </>
+        ) : (
+          <>
+            When Astraeya reads a reply aloud, the text of that reply is sent to
+            Astraeya&apos;s own server, which makes the speech and sends it back.
+            Nothing is sent to any other company, and the audio is not stored.
+          </>
+        )}{" "}
+        If speech is ever unavailable, your browser&apos;s built-in voice reads
+        instead, and you&apos;ll see a note saying so.
       </Callout>
 
       {voiceDisabled && (

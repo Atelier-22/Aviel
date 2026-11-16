@@ -13,6 +13,7 @@ import { env } from "../env";
 import { DEFAULT_VOICE, findVoice, normalizeVoiceId } from "./catalogue";
 import { speechPieces, splitSentences } from "./sentences";
 import { normalizeForSpeech } from "./normalize";
+import { hostedSpeak, hostedSpeechEnabled, hostedTranscribe, wavSeconds } from "./hosted";
 
 export class VoiceUnavailable extends Error {}
 
@@ -107,6 +108,19 @@ export async function synthesize(written: string, voiceId: string, signal?: Abor
 }
 
 async function make(text: string, voice: string, key: string): Promise<Speech> {
+  // Kokoro voices (Heart and the rest) from the hosted GPUs when switched on:
+  // the same voice, in a fraction of the time. Any failure falls through to
+  // our own voice server below.
+  if (hostedSpeechEnabled() && findVoice(voice)?.engine === "kokoro") {
+    try {
+      const wav = await hostedSpeak(text, voice);
+      const speech: Speech = { wav, voice, seconds: wavSeconds(wav), cached: false };
+      cacheSet(key, speech);
+      return speech;
+    } catch (err) {
+      console.warn("[voice] hosted speech failed, using our own server:", err instanceof Error ? err.message : err);
+    }
+  }
   let res: Response;
   try {
     res = await fetch(`${baseUrl()}/synthesize`, {
@@ -153,6 +167,13 @@ export interface Transcript {
 
 /** WAV audio in, the words out. */
 export async function transcribe(wav: Buffer): Promise<Transcript> {
+  if (hostedSpeechEnabled()) {
+    try {
+      return { text: await hostedTranscribe(wav), seconds: wavSeconds(wav) };
+    } catch (err) {
+      console.warn("[voice] hosted transcription failed, using our own server:", err instanceof Error ? err.message : err);
+    }
+  }
   const raw = (env.VOICE_STT_URL ?? "").trim().replace(/\/$/, "");
   const sttUrl = raw ? (/^https?:\/\//.test(raw) ? raw : `http://${raw}`) : baseUrl();
   let res: Response;

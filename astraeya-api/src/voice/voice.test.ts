@@ -250,3 +250,17 @@ describe("numbers are said the way a person says them", () => {
     assert.equal(normalizeForSpeech(plain), plain);
   });
 });
+
+import { wavSeconds } from "./hosted";
+
+describe("reading a WAV's length", () => {
+  it("finds the data chunk and divides by the byte rate", () => {
+    const rate = 24000, samples = 12000; // half a second of 16-bit mono
+    const wav = Buffer.alloc(44 + samples * 2);
+    wav.write("RIFF", 0); wav.writeUInt32LE(36 + samples * 2, 4); wav.write("WAVE", 8); wav.write("fmt ", 12);
+    wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22); wav.writeUInt32LE(rate, 24); wav.writeUInt32LE(rate * 2, 28);
+    wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write("data", 36); wav.writeUInt32LE(samples * 2, 40);
+    assert.equal(wavSeconds(wav), 0.5);
+    assert.equal(wavSeconds(Buffer.from("not audio")), 0);
+  });
+});
