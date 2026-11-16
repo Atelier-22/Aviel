@@ -1,5 +1,5 @@
 {
-  "note": "Every model file the voice server needs, where to get it, and its SHA-256. download_models.py fetches anything missing and refuses a file whose checksum does not match. Kokoro is the official kokoro-onnx v1.0 release, in full (kokoro-v1.0.onnx) and 16-bit (kokoro-v1.0.fp16.onnx, faster on CPU) builds; VOICE_KOKORO_MODEL chooses.",
+  "note": "Every model file the voice server needs, where to get it, and its SHA-256. download_models.py fetches anything missing and refuses a file whose checksum does not match. Kokoro is the official kokoro-onnx v1.0 release, in full (kokoro-v1.0.onnx) and 16-bit (kokoro-v1.0.fp16.onnx, smaller; not faster on the CPUs measured) builds; VOICE_KOKORO_MODEL chooses.",
   "files": [
     {
       "path": "kokoro/kokoro-v1.0.onnx",

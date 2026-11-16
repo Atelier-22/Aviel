@@ -14,10 +14,10 @@ still being made.
 
 Settings (environment):
     VOICE_MODELS_DIR  folder with kokoro/ and piper/ (default ../voices)
-    VOICE_THREADS     CPU threads per sentence (default 1)
-    VOICE_WORKERS     sentences made in parallel (default: number of CPU cores)
+    VOICE_THREADS     CPU threads per piece (default: half the logical CPUs, at most 4)
+    VOICE_WORKERS     pieces made at the same time (default 1)
     VOICE_SECRET      shared secret expected in X-Voice-Secret (unset = no check, for local use)
-    VOICE_KOKORO_MODEL  kokoro-v1.0.onnx (default) or kokoro-v1.0.fp16.onnx (faster on CPU)
+    VOICE_KOKORO_MODEL  kokoro-v1.0.onnx (default, fastest on the CPUs measured) or kokoro-v1.0.fp16.onnx
     VOICE_DEVICE      cpu (default) or cuda (NVIDIA GPU, with onnxruntime-gpu)
     VOICE_STT_MODEL   Whisper model for /transcribe: base.en (default) or small.en (better, slower)
     VOICE_STT_DIR     where Whisper models are kept (default ./models/whisper)
@@ -47,13 +47,17 @@ from pydantic import BaseModel, Field
 
 HERE = Path(__file__).resolve().parent
 MODELS = Path(os.environ.get("VOICE_MODELS_DIR", HERE.parent / "voices")).resolve()
-THREADS = max(1, int(os.environ.get("VOICE_THREADS", "1")))
-# Sentences made at the same time, one per CPU core. While one sentence plays,
-# the next ones are already being made, which is what removes the pauses.
-WORKERS = max(1, int(os.environ.get("VOICE_WORKERS", str(max(1, (os.cpu_count() or 2) // 2)))))
+# Measured on a 4-core laptop (i5-8350U), Heart's first 24 characters: 2.09 s
+# on 1 thread, 1.35 s on 4, 1.78 s on 8; two pieces at once on 4 threads each
+# took 4.5 s apiece. So each piece gets several threads and pieces are made
+# one after another, in order: the opening words come soonest and each later
+# piece is made faster than the one before it plays.
+THREADS = max(1, int(os.environ.get("VOICE_THREADS", str(min(4, max(1, (os.cpu_count() or 2) // 2))))))
+WORKERS = max(1, int(os.environ.get("VOICE_WORKERS", "1")))
 SECRET = os.environ.get("VOICE_SECRET", "")
 # Which Kokoro build to run: the full model (default) or the official 16-bit
-# build of the same model, which is faster on a CPU. Same voices either way.
+# build of the same model (not faster on the laptop measured: 0.76 vs 0.70
+# seconds per second of speech). Same voices either way.
 KOKORO_MODEL = os.environ.get("VOICE_KOKORO_MODEL", "kokoro-v1.0.onnx")
 # "cuda" runs on an NVIDIA GPU (needs onnxruntime-gpu; see Dockerfile.gpu),
 # falling back to the CPU if no GPU is usable. On a GPU, Heart is made many
