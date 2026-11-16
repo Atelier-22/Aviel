@@ -1,5 +1,5 @@
 /**
- * Hosted speech (DeepInfra): the same Kokoro model, so exactly the same Heart
+ * Hosted speech (DeepInfra) and listening (Groq or DeepInfra): the same Kokoro model, so exactly the same Heart
  * voice, and Whisper for listening, running on GPUs. Used when
  * DEEPINFRA_API_KEY is set, because it answers in a fraction of a second
  * where this laptop's CPU takes seconds. Any failure falls back to Astraeya's
@@ -22,32 +22,54 @@ export function hostedSpeechEnabled(): boolean {
  * wait seconds for a refusal before our own server speaks. No credit or a bad
  * key (402, 401, 403) pauses it for 5 minutes; anything else for 30 seconds.
  */
-let pausedUntil = 0;
-function noteFailure(status?: number): void {
-  pausedUntil = Date.now() + (status === 401 || status === 402 || status === 403 ? 5 * 60_000 : 30_000);
+const pausedUntil = new Map<string, number>();
+function noteFailure(provider: string, status?: number): void {
+  pausedUntil.set(provider, Date.now() + (status === 401 || status === 402 || status === 403 ? 5 * 60_000 : status === 429 ? 60_000 : 30_000));
+}
+function paused(provider: string): boolean {
+  return Date.now() < (pausedUntil.get(provider) ?? 0);
 }
 
 /** Switched on, and not paused after a recent failure. */
 export function hostedSpeechReady(): boolean {
-  return hostedSpeechEnabled() && Date.now() >= pausedUntil;
+  return hostedSpeechEnabled() && !paused("deepinfra");
+}
+
+/**
+ * Listening: Groq's Whisper (free plan: 2,000 requests a day) when GROQ_API_KEY
+ * is set, else DeepInfra's when its key is set.
+ */
+function listener(): { name: string; base: string; key: string; model: string } | null {
+  if (env.GROQ_API_KEY && !paused("groq")) return { name: "groq", base: "https://api.groq.com/openai/v1", key: env.GROQ_API_KEY, model: "whisper-large-v3-turbo" };
+  if (env.DEEPINFRA_API_KEY && !paused("deepinfra")) return { name: "deepinfra", base: BASE(), key: env.DEEPINFRA_API_KEY, model: "openai/whisper-large-v3-turbo" };
+  return null;
+}
+
+export function hostedListeningReady(): boolean {
+  return listener() !== null;
+}
+
+/** Recordings may go to a provider (shown in the privacy text). */
+export function hostedListeningEnabled(): boolean {
+  return Boolean(env.GROQ_API_KEY || env.DEEPINFRA_API_KEY);
 }
 
 /** For tests. */
 export function resetHostedPause(): void {
-  pausedUntil = 0;
+  pausedUntil.clear();
 }
 
-async function call(path: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+async function call(provider: string, url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
   let res: Response;
   try {
-    res = await fetch(`${BASE()}${path}`, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+    res = await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
   } catch (err) {
-    noteFailure();
+    noteFailure(provider);
     throw err;
   }
   if (!res.ok) {
-    noteFailure(res.status);
-    throw new Error(`hosted ${path} ${res.status}: ${(await res.text().catch(() => "")).slice(0, 200)}`);
+    noteFailure(provider, res.status);
+    throw new Error(`${provider} ${new URL(url).pathname} ${res.status}: ${(await res.text().catch(() => "")).slice(0, 200)}`);
   }
   return res;
 }
@@ -70,7 +92,8 @@ export function wavSeconds(wav: Buffer): number {
 /** Heart (or any Kokoro voice) from the hosted Kokoro model, as WAV. */
 export async function hostedSpeak(text: string, voice: string): Promise<Buffer> {
   const res = await call(
-    "/audio/speech",
+    "deepinfra",
+    `${BASE()}/audio/speech`,
     {
       method: "POST",
       headers: { Authorization: `Bearer ${env.DEEPINFRA_API_KEY}`, "Content-Type": "application/json" },
@@ -80,7 +103,7 @@ export async function hostedSpeak(text: string, voice: string): Promise<Buffer> 
   );
   const wav = Buffer.from(await res.arrayBuffer());
   if (wavSeconds(wav) <= 0) {
-    noteFailure();
+    noteFailure("deepinfra");
     throw new Error("hosted speech returned no audio");
   }
   return wav;
@@ -88,11 +111,13 @@ export async function hostedSpeak(text: string, voice: string): Promise<Buffer> 
 
 /** The words in a WAV recording, from hosted Whisper. */
 export async function hostedTranscribe(wav: Buffer): Promise<string> {
+  const who = listener();
+  if (!who) throw new Error("no hosted listening");
   const form = new FormData();
   form.append("file", new Blob([new Uint8Array(wav)], { type: "audio/wav" }), "speech.wav");
-  form.append("model", "openai/whisper-large-v3-turbo");
+  form.append("model", who.model);
   form.append("language", "en");
-  const res = await call("/audio/transcriptions", { method: "POST", headers: { Authorization: `Bearer ${env.DEEPINFRA_API_KEY}` }, body: form }, 10_000);
+  const res = await call(who.name, `${who.base}/audio/transcriptions`, { method: "POST", headers: { Authorization: `Bearer ${who.key}` }, body: form }, 10_000);
   const body = (await res.json()) as { text?: string };
   return (body.text ?? "").trim();
 }

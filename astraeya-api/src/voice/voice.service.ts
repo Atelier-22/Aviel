@@ -13,7 +13,7 @@ import { env } from "../env";
 import { DEFAULT_VOICE, findVoice, normalizeVoiceId } from "./catalogue";
 import { speechPieces, splitSentences } from "./sentences";
 import { normalizeForSpeech } from "./normalize";
-import { hostedSpeak, hostedSpeechReady, hostedTranscribe, wavSeconds } from "./hosted";
+import { hostedListeningReady, hostedSpeak, hostedSpeechReady, hostedTranscribe, wavSeconds } from "./hosted";
 
 export class VoiceUnavailable extends Error {}
 
@@ -167,7 +167,7 @@ export interface Transcript {
 
 /** WAV audio in, the words out. */
 export async function transcribe(wav: Buffer): Promise<Transcript> {
-  if (hostedSpeechReady()) {
+  if (hostedListeningReady()) {
     try {
       return { text: await hostedTranscribe(wav), seconds: wavSeconds(wav) };
     } catch (err) {

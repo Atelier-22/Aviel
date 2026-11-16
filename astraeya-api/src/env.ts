@@ -49,6 +49,7 @@ const envSchema = z.object({
   // Set it and speaking and listening become near-instant; unset, Astraeya's
   // own voice server does both. Reply text and recordings then go to DeepInfra.
   DEEPINFRA_API_KEY: z.string().optional(),
+  GROQ_API_KEY: z.string().optional(),
   DEEPINFRA_BASE_URL: z.string().optional(),
 
   // Comma-separated list of browser origins allowed to call this API.

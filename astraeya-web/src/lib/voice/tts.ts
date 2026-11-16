@@ -393,6 +393,8 @@ export interface VoiceList {
   available: boolean;
   /** Speech is made by the hosted provider (DeepInfra), not only our server. */
   hosted?: boolean;
+  /** Astra Assist's recordings are turned into text by a provider (Groq or DeepInfra). */
+  hostedListening?: boolean;
   voices: AstraeyaVoice[];
 }
 

@@ -55,6 +55,7 @@ export function VoiceSection() {
   const [voices, setVoices] = useState<AstraeyaVoice[]>([]);
   const [serviceUp, setServiceUp] = useState<boolean | null>(null);
   const [hosted, setHosted] = useState(false);
+  const [hostedListening, setHostedListening] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -63,6 +64,7 @@ export function VoiceSection() {
         setVoices(list.voices);
         setServiceUp(list.available);
         setHosted(Boolean(list.hosted));
+        setHostedListening(Boolean(list.hostedListening));
       })
       .catch(() => setServiceUp(false));
   }, []);
@@ -168,7 +170,10 @@ export function VoiceSection() {
           <>
             When Astraeya reads a reply aloud, the text of that reply is sent to
             Astraeya&apos;s own server, which makes the speech and sends it back.
-            Nothing is sent to any other company, and the audio is not stored.
+            The audio is not stored.
+            {hostedListening
+              ? " In Astra Assist, your spoken question is sent to Groq, a speech provider, to be turned into text quickly; it isn't stored by Astraeya."
+              : " Nothing is sent to any other company."}
           </>
         )}{" "}
         If speech is ever unavailable, your browser&apos;s built-in voice reads
